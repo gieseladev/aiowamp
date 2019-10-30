@@ -1,54 +1,69 @@
+from __future__ import annotations
+
 import abc
 
-from aiowamp.message import MessageABC, WAMPDict
-from aiowamp.transport import TransportABC
+import aiowamp
 
 __all__ = ["SessionABC", "Session"]
 
 
 class SessionABC(abc.ABC):
+    """Abstract session type.
+
+    A Session is a transient conversation between two Peers attached to a Realm
+    and running over a Transport.
+    """
     __slots__ = ()
 
     @property
     @abc.abstractmethod
-    def id(self) -> int:
+    def session_id(self) -> int:
+        """Session ID."""
         ...
 
     @property
     @abc.abstractmethod
     def realm(self) -> str:
+        """Name of the realm the session is attached to."""
         ...
 
     @property
     @abc.abstractmethod
-    def details(self) -> WAMPDict:
+    def details(self) -> aiowamp.WAMPDict:
         ...
 
     @abc.abstractmethod
-    async def send(self, msg: MessageABC) -> None:
+    async def send(self, msg: aiowamp.MessageABC) -> None:
+        """Send a message using the underlying transport."""
         ...
 
 
 class Session(SessionABC):
-    __slots__ = ("__id", "__details", "__realm",
+    __slots__ = ("__session_id", "__realm", "__details",
                  "transport")
 
-    __id: int
-    __details: WAMPDict
+    __session_id: int
     __realm: str
-    transport: TransportABC
+    __details: aiowamp.WAMPDict
+
+    transport: aiowamp.TransportABC
+
+    def __init__(self, transport: aiowamp.TransportABC, session_id: int, details: aiowamp.WAMPDict) -> None:
+        self.transport = transport
+        self.__session_id = session_id
+        self.__details = details
 
     @property
-    def id(self) -> int:
-        return self.__id
+    def session_id(self) -> int:
+        return self.__session_id
 
     @property
     def realm(self) -> str:
         return self.__realm
 
     @property
-    def details(self) -> WAMPDict:
+    def details(self) -> aiowamp.WAMPDict:
         return self.__details
 
-    async def send(self, msg: MessageABC) -> None:
+    async def send(self, msg: aiowamp.MessageABC) -> None:
         await self.transport.send(msg)

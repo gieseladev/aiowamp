@@ -7,7 +7,7 @@ verify_ssl = true
 
 [packages]
 websockets = "*"
-aiobservable = "*"
+msgpack = "*"
 
 [requires]
 python_version = "3.8"

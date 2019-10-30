@@ -1,4 +1,5 @@
 class URI(str):
+    """Representation of a WAMP URI."""
     __slots__ = ()
 
     def valid_uri(self, strict: bool) -> bool:

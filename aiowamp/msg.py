@@ -1,7 +1,11 @@
 import textwrap
 from typing import Iterable, List, Reversible, Tuple, Type
 
-from aiowamp.message import MessageABC, register_message
+import aiowamp
+
+__all__ = []
+
+# The message types are generated dynamically from the following list.
 
 MSGS = (
     ("Hello", 1, ("realm", "details")),
@@ -69,15 +73,13 @@ def _gen_optional_attr_code(attrs: Reversible[Tuple[str, str]]) -> str:
 
 
 MSG_TEMPLATE = """
-class {name}(MessageABC):
+class {name}(aiowamp.MessageABC):
     __slots__ = ({quoted_attrs_list_str},)
+    
+    message_type = {message_type}
 
     def __init__(self, {init_sig_str}):
         {set_attr_lines}
-
-    @property
-    def message_type(self) -> int:
-        return {message_type}
 
     def to_message_list(self):
 {to_message_list_code}
@@ -90,7 +92,7 @@ class {name}(MessageABC):
 
 def _create_msg_cls(name: str, message_type: int,
                     attrs: Iterable[str],
-                    optional_attrs: Iterable[Tuple[str, str]]) -> Type[MessageABC]:
+                    optional_attrs: Iterable[Tuple[str, str]]) -> Type[aiowamp.MessageABC]:
     attrs, optional_attrs = list(attrs), list(optional_attrs)
     all_attrs = [*attrs, *(attr for attr, _ in optional_attrs)]
 
@@ -136,7 +138,9 @@ def _create_msgs():
 
         cls = _create_msg_cls(name, message_type, attrs, optional_attrs)
         globals()[name] = cls
-        register_message(cls)
+        __all__.append(name)
+
+        aiowamp.register_message_cls(cls)
 
 
 _create_msgs()

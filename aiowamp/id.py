@@ -7,6 +7,7 @@ MAX_ID = 1 << 53
 
 
 class IDGeneratorABC(Iterator[int], abc.ABC):
+    """Abstract WAMP ID generator type."""
     __slots__ = ()
 
     def __next__(self) -> int:
@@ -14,10 +15,16 @@ class IDGeneratorABC(Iterator[int], abc.ABC):
 
     @abc.abstractmethod
     def next(self) -> int:
+        """Return the next id.
+
+        Returns:
+            The next id.
+        """
         ...
 
 
 class IDGenerator(IDGeneratorABC):
+    """Sequential ID generator."""
     __slots__ = ("__id",)
 
     __id: int

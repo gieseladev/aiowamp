@@ -2,6 +2,11 @@ from typing import Optional
 
 from aiowamp import MessageABC, URI, WAMPDict, WAMPList
 
+__all__ = ["Hello", "Welcome", "Abort", "Challenge", "Hello", "Welcome", "Abort", "Challenge", "Authenticate",
+           "Goodbye", "Error", "Publish", "Published", "Subscribe", "Subscribed", "Unsubscribe", "Unsubscribed",
+           "Event", "Call", "Cancel", "Result", "Register", "Registered", "Unregister", "Unregistered", "Invocation",
+           "Interrupt", "Yield"]
+
 
 class Hello(MessageABC):
     realm: URI
