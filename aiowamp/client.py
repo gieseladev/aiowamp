@@ -5,7 +5,6 @@ import asyncio
 import contextlib
 from typing import Any, Dict, MutableMapping, Optional
 
-import aiobservable
 
 import aiowamp
 
@@ -21,7 +20,7 @@ class ClientABC(abc.ABC):
         ...
 
     @abc.abstractmethod
-    async def subscribe(self, topic: str, *, options: aiowamp.WAMPDict = None) -> aiobservable.SubscriptionABC:
+    async def subscribe(self, topic: str, *, options: aiowamp.WAMPDict = None) -> None:
         ...
 
     @abc.abstractmethod

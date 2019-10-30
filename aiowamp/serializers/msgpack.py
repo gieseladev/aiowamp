@@ -3,7 +3,7 @@ import msgpack
 import aiowamp
 
 
-class JSONSerializer(aiowamp.SerializerABC):
+class MessagePackSerializer(aiowamp.SerializerABC):
     __slots__ = ()
 
     def serialize(self, msg: aiowamp.MessageABC) -> bytes:

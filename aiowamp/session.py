@@ -42,15 +42,16 @@ class Session(SessionABC):
     __slots__ = ("__session_id", "__realm", "__details",
                  "transport")
 
+    transport: aiowamp.TransportABC
+
     __session_id: int
     __realm: str
     __details: aiowamp.WAMPDict
 
-    transport: aiowamp.TransportABC
-
-    def __init__(self, transport: aiowamp.TransportABC, session_id: int, details: aiowamp.WAMPDict) -> None:
+    def __init__(self, transport: aiowamp.TransportABC, session_id: int, realm: str, details: aiowamp.WAMPDict) -> None:
         self.transport = transport
         self.__session_id = session_id
+        self.__realm = realm
         self.__details = details
 
     @property

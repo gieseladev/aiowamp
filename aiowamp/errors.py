@@ -6,12 +6,17 @@ from typing import Type
 import aiowamp
 
 __all__ = ["Error",
+           "TransportError",
            "InvalidMessage", "UnexpectedMessageError",
            "RPCError"]
 
 
 class Error(Exception):
     """Base exception for all WAMP related errors."""
+    ...
+
+
+class TransportError(Error):
     ...
 
 
