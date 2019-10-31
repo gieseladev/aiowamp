@@ -8,7 +8,7 @@ from .transport import *
 from .uri import *
 
 # second import step
-from . import msg
+from . import msg, serializers, transports
 from .connect import *
 
 __version__ = "0.0.1"

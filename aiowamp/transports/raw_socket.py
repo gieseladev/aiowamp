@@ -1,23 +1,47 @@
 import asyncio
 import logging
-from typing import Callable, Optional
+import ssl
+import urllib.parse as urlparse
+from typing import Dict, Optional, Type, Union
 
 import aiowamp
 
 log = logging.getLogger(__name__)
 
 MAGIC_OCTET = b"\x7F"
+"""Magic bytes sent as the first octet of the handshake."""
 
 
 class RawSocketTransport(aiowamp.TransportABC):
+    """WAMP transport over raw sockets.
+
+    Args:
+        reader: Reader to read from.
+        writer: Writer to write to.
+        serializer: Serializer to use.
+        recv_limit: Max amount of bytes willing to receive.
+        send_limit: Max amount of bytes remote is willing to receive.
+
+    See Also:
+        The `connect` method for opening a connection.
+
+    Notes:
+        The `start` method needs to be called before `recv` can read any messages.
+        This is done as part of the `perform_client_handshake` procedure.
+    """
     __slots__ = ("reader", "writer", "serializer",
                  "_msg_queue",
                  "__recv_limit", "__send_limit",
                  "__read_task")
 
     reader: asyncio.StreamReader
+    """Reader for the underlying stream."""
+
     writer: asyncio.StreamWriter
+    """Writer for the underlying transport."""
+
     serializer: aiowamp.SerializerABC
+    """Serializer used to serialise messages."""
 
     _msg_queue: Optional[asyncio.Queue]
 
@@ -42,6 +66,11 @@ class RawSocketTransport(aiowamp.TransportABC):
 
         self.__read_task = None
 
+    def __repr__(self) -> str:
+        return f"RawSocketTransport(reader={self.reader!r},writer={self.writer!r}," \
+               f"serializer={self.serializer!r},recv_limit={self.__recv_limit!r}," \
+               f"send_limit={self.__send_limit!r})"
+
     def start(self) -> None:
         if self.__read_task and not self.__read_task.done():
             raise RuntimeError("read loop already running!")
@@ -50,6 +79,7 @@ class RawSocketTransport(aiowamp.TransportABC):
         if not loop.is_running():
             raise RuntimeError("cannot start read loop. Event loop isn't running")
 
+        self._msg_queue = asyncio.Queue()
         self.__read_task = loop.create_task(self.__read_loop())
 
     async def close(self) -> None:
@@ -58,21 +88,29 @@ class RawSocketTransport(aiowamp.TransportABC):
         await self.writer.wait_closed()
 
     async def send(self, msg: aiowamp.MessageABC) -> None:
+        log.debug("%s: sending: %r", self, msg)
+
         data = self.serializer.serialize(msg)
         if len(data) > self.__send_limit:
             # TODO raise
             raise Exception
 
         header = b"\x00" + int_to_bytes(len(data))
+
         if log.isEnabledFor(logging.DEBUG):
-            log.debug("%s writing header: %s", header.hex())
+            log.debug("%s: writing header: %s", self, header.hex(":"))
+            log.debug("%s: writing data: %s", self, data.hex())
 
         self.writer.write(header)
         self.writer.write(data)
         await self.writer.drain()
 
     async def __read_once(self) -> None:
-        header = await self.reader.readexactly(4)
+        try:
+            header = await self.reader.readexactly(4)
+        except asyncio.IncompleteReadError:
+            return
+
         length = bytes_to_int(header[1:])
         if length > self.__recv_limit:
             await self.close()
@@ -105,13 +143,15 @@ class RawSocketTransport(aiowamp.TransportABC):
             await self.reader.readexactly(length)
 
     async def __read_loop(self) -> None:
-        self._msg_queue = asyncio.Queue()
+        log.debug("%s: starting read loop", self)
 
         while not (self.reader.at_eof() or self.reader.exception()):
             try:
                 await self.__read_once()
             except Exception:
                 log.exception("%s: error while reading once", self)
+
+        log.debug("%s: exiting read loop", self)
 
     async def recv(self) -> aiowamp.MessageABC:
         try:
@@ -157,7 +197,7 @@ def size_to_byte_limit(recv_limit: int) -> int:
     return 0xf
 
 
-HANDSHAKE_ERROR_CODE_EXCEPTION_MAP = {
+HANDSHAKE_ERRCODE_EXCEPTIONS = {
     0: aiowamp.TransportError("illegal error code"),
     1: aiowamp.TransportError("serializer unsupported"),
     2: aiowamp.TransportError("maximum message length unacceptable"),
@@ -165,23 +205,46 @@ HANDSHAKE_ERROR_CODE_EXCEPTION_MAP = {
     4: aiowamp.TransportError("maximum connection count reached"),
 }
 
-SerializerFactory = Callable[[int], aiowamp.SerializerABC]
-
 
 async def perform_client_handshake(reader: asyncio.StreamReader, writer: asyncio.StreamWriter,
                                    recv_limit: int, protocol: int, *,
-                                   serializer_factory: SerializerFactory,
+                                   serializer: aiowamp.SerializerABC,
                                    ) -> RawSocketTransport:
+    """Perform the raw socket client handshake and establish the transport.
+
+    Args:
+        reader: Reader to read from.
+        writer: Writer to write to.
+        recv_limit: Receive limit in bytes.
+        protocol: Serialization protocol to use.
+        serializer: Serializer to use for the transport.
+
+    Returns:
+        Established raw socket transport.
+
+    Raises:
+        aiowamp.TransportError: When the handshake fails.
+    """
     recv_byte_limit = size_to_byte_limit(recv_limit)
 
     handshake_data = bytearray(MAGIC_OCTET)
     handshake_data.append((recv_byte_limit & 0xf) << 4 | protocol)
     handshake_data.extend((0, 0))
 
+    if log.isEnabledFor(logging.DEBUG):
+        log.debug("sending handshake: %s", handshake_data.hex(":"))
+
     writer.write(handshake_data)
     await writer.drain()
 
-    resp = await reader.readexactly(4)
+    try:
+        resp = await reader.readexactly(4)
+    except asyncio.IncompleteReadError as e:
+        raise aiowamp.TransportError("remote closed connection during handshake") from e
+
+    if log.isEnabledFor(logging.DEBUG):
+        log.debug("received handshake response: %s", resp.hex(":"))
+
     # use 1-slice to get bytes instead of int
     if resp[0:1] != MAGIC_OCTET:
         raise aiowamp.TransportError("received invalid magic octet while performing handshake. "
@@ -189,14 +252,14 @@ async def perform_client_handshake(reader: asyncio.StreamReader, writer: asyncio
 
     if resp[2:] != b"\x00\x00":
         raise aiowamp.TransportError("expected 3rd and 4th octet to be all zeroes (reserved). "
-                                     f"Saw {resp[2:].hex()}")
+                                     f"Saw {resp[2:].hex(':')}")
 
     proto_echo = resp[1] & 0xf
-    # if the first 4 bits are 0
+    # if the first 4 bits are 0 it's an error response
     if proto_echo == 0:
         error_code = resp[1] >> 4
         try:
-            exc = HANDSHAKE_ERROR_CODE_EXCEPTION_MAP[error_code]
+            exc = HANDSHAKE_ERRCODE_EXCEPTIONS[error_code]
         except KeyError:
             raise aiowamp.TransportError(f"unknown error code: {error_code}") from None
         else:
@@ -209,21 +272,73 @@ async def perform_client_handshake(reader: asyncio.StreamReader, writer: asyncio
     recv_limit = byte_limit_to_size(recv_byte_limit)
     send_limit = byte_limit_to_size(resp[1] >> 4)
 
-    transport = RawSocketTransport(reader, writer, serializer_factory(protocol),
+    transport = RawSocketTransport(reader, writer, serializer,
                                    recv_limit=recv_limit, send_limit=send_limit)
 
     transport.start()
     return transport
 
 
-async def connect(serializer: aiowamp.SerializerABC, *,
+def is_secure_scheme(scheme: str) -> bool:
+    """Check if the given scheme is secure.
+
+    Args:
+        scheme: Scheme to check
+
+    Returns:
+        Whether the scheme is secure.
+    """
+    return scheme in {"tcps", "tcp4s", "tcp6s", "rss"}
+
+
+async def connect(url: Union[str, urlparse.ParseResult], serializer: aiowamp.SerializerABC, *,
+                  ssl_context: ssl.SSLContext = None,
                   recv_limit: int = 0) -> RawSocketTransport:
-    loop = asyncio.get_event_loop()
+    """Connect to a WAMP router over raw socket.
+
+    Args:
+        url: URL of the router.
+        serializer: Serializer to use.
+        ssl_context: Set custom SSL context options.
+        recv_limit: Receive limit in bytes.
+            Defaults to the max size of 16mb.
+
+    Returns:
+        THe connected raw socket transport.
+    """
+    if not isinstance(url, urlparse.ParseResult):
+        url: urlparse.ParseResult = urlparse.urlparse(url)
+
+    if is_secure_scheme(url.scheme):
+        if not ssl_context:
+            # create default ssl context
+            ssl_context = True
+    elif ssl_context:
+        raise ValueError(f"SSL context specified for a uri which doesn't use TLS: {url.scheme!r}.")
 
     reader = asyncio.StreamReader()
+
+    loop = asyncio.get_event_loop()
     transport, protocol = await loop.create_connection(
         lambda: asyncio.StreamReaderProtocol(reader),
+        host=url.hostname,
+        port=url.port,
+        ssl=ssl_context,
     )
     writer = asyncio.StreamWriter(transport, protocol, reader, loop)
 
-    return await perform_client_handshake(reader, writer, recv_limit, )
+    log.debug("performing handshake")
+    return await perform_client_handshake(
+        reader, writer, recv_limit, get_serializer_protocol(serializer),
+        serializer=serializer,
+    )
+
+
+_BUILTIN_PROTOCOLS: Dict[Type[aiowamp.SerializerABC], int] = {
+    aiowamp.serializers.JSONSerializer: 1,
+    aiowamp.serializers.MessagePackSerializer: 2,
+}
+
+
+def get_serializer_protocol(serializer: aiowamp.SerializerABC) -> int:
+    return _BUILTIN_PROTOCOLS[type(serializer)]

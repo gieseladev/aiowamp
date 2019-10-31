@@ -16,6 +16,9 @@ class TransportABC(abc.ABC):
     """
     __slots__ = ()
 
+    def __str__(self) -> str:
+        return f"{type(self).__qualname__} {id(self):x}"
+
     @abc.abstractmethod
     async def close(self) -> None:
         """Close the transport."""

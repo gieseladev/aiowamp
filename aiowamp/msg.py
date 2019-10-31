@@ -80,6 +80,9 @@ class {name}(aiowamp.MessageABC):
 
     def __init__(self, {init_sig_str}):
         {set_attr_lines}
+    
+    def __repr__(self):
+        return f"{name}({repr_attrs_str})"
 
     def to_message_list(self):
 {to_message_list_code}
@@ -100,7 +103,7 @@ def _create_msg_cls(name: str, message_type: int,
     set_attr_lines = tuple(f"{bound} = {attr}" for attr, bound in zip(all_attrs, bound_attrs))
 
     indent = 8 * " "
-    bound_attrs_str = ",".join(bound_attrs)
+    bound_attrs_str = "self.message_type," + ",".join(bound_attrs)
     if optional_attrs:
         to_message_list_code = textwrap.indent(
             (f"msg_list = [{bound_attrs_str}]\n" +
@@ -118,6 +121,7 @@ def _create_msg_cls(name: str, message_type: int,
         quoted_attrs_list_str=", ".join(map(repr, all_attrs)),
         set_attr_lines=";".join(set_attr_lines),
         to_message_list_code=to_message_list_code,
+        repr_attrs_str=",".join(f"{attr}={{{bound}!r}}" for attr, bound in zip(all_attrs, bound_attrs)),
     )
 
     loc = {}
