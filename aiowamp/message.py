@@ -33,7 +33,7 @@ class MessageABC(abc.ABC):
     message_type: ClassVar[int]
 
     def __str__(self) -> str:
-        return f"{self.message_type} {type(self).__name__}"
+        return f"{self.message_type} {type(self).__qualname__}"
 
     @abc.abstractmethod
     def to_message_list(self) -> WAMPList:

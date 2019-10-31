@@ -32,8 +32,11 @@ class IDGenerator(IDGeneratorABC):
     def __init__(self) -> None:
         self.__id = 0
 
+    def __repr__(self) -> str:
+        return "IDGenerator()"
+
     def __str__(self) -> str:
-        return f"IDGenerator{self.__id}"
+        return f"IDGenerator {self.__id}"
 
     def next(self) -> int:
         self.__id += 1

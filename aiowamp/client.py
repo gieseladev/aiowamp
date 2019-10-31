@@ -5,7 +5,6 @@ import asyncio
 import contextlib
 from typing import Any, Dict, MutableMapping, Optional
 
-
 import aiowamp
 
 __all__ = ["ClientABC", "Client"]
@@ -13,6 +12,9 @@ __all__ = ["ClientABC", "Client"]
 
 class ClientABC(abc.ABC):
     __slots__ = ()
+
+    def __str__(self) -> str:
+        return f"{type(self).__qualname__} {id(self):x}"
 
     @abc.abstractmethod
     async def call(self, procedure: str, *args: aiowamp.WAMPType, options: aiowamp.WAMPDict = None,

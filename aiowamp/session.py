@@ -15,6 +15,9 @@ class SessionABC(abc.ABC):
     """
     __slots__ = ()
 
+    def __str__(self) -> str:
+        return f"{type(self).__qualname__} {self.session_id}"
+
     @property
     @abc.abstractmethod
     def session_id(self) -> int:
