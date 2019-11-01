@@ -1,6 +1,6 @@
 from typing import Optional
 
-from aiowamp import MessageABC, URI, WAMPDict, WAMPList
+import aiowamp
 
 __all__ = ["Hello", "Welcome", "Abort", "Challenge", "Hello", "Welcome", "Abort", "Challenge", "Authenticate",
            "Goodbye", "Error", "Publish", "Published", "Subscribe", "Subscribed", "Unsubscribe", "Unsubscribed",
@@ -8,80 +8,90 @@ __all__ = ["Hello", "Welcome", "Abort", "Challenge", "Hello", "Welcome", "Abort"
            "Interrupt", "Yield"]
 
 
-class Hello(MessageABC):
-    realm: URI
-    details: WAMPDict
+class _StubMessage(aiowamp.MessageABC):
 
-    def __init__(self, realm: URI, details: WAMPDict) -> None:
+    def to_message_list(self):
+        ...
+
+    @classmethod
+    def from_message_list(cls, msg_list):
         ...
 
 
-class Welcome(MessageABC):
+class Hello(_StubMessage):
+    realm: aiowamp.URI
+    details: aiowamp.WAMPDict
+
+    def __init__(self, realm: aiowamp.URI, details: aiowamp.WAMPDict) -> None:
+        ...
+
+
+class Welcome(_StubMessage):
     session_id: int
-    details: WAMPDict
+    details: aiowamp.WAMPDict
 
-    def __init__(self, session_id: int, details: WAMPDict) -> None:
+    def __init__(self, session_id: int, details: aiowamp.WAMPDict) -> None:
         ...
 
 
-class Abort(MessageABC):
-    details: WAMPDict
-    reason: URI
+class Abort(_StubMessage):
+    details: aiowamp.WAMPDict
+    reason: aiowamp.URI
 
-    def __init__(self, details: WAMPDict, reason: URI) -> None:
+    def __init__(self, details: aiowamp.WAMPDict, reason: aiowamp.URI) -> None:
         ...
 
 
-class Challenge(MessageABC):
+class Challenge(_StubMessage):
     auth_method: str
-    extra: WAMPDict
+    extra: aiowamp.WAMPDict
 
-    def __init__(self, auth_method: str, extra: WAMPDict) -> None:
+    def __init__(self, auth_method: str, extra: aiowamp.WAMPDict) -> None:
         ...
 
 
-class Authenticate(MessageABC):
+class Authenticate(_StubMessage):
     signature: str
-    extra: WAMPDict
+    extra: aiowamp.WAMPDict
 
-    def __init__(self, signature: str, extra: WAMPDict) -> None:
+    def __init__(self, signature: str, extra: aiowamp.WAMPDict) -> None:
         ...
 
 
-class Goodbye(MessageABC):
-    details: WAMPDict
-    reason: URI
+class Goodbye(_StubMessage):
+    details: aiowamp.WAMPDict
+    reason: aiowamp.URI
 
-    def __init__(self, details: WAMPDict, reason: URI) -> None:
+    def __init__(self, details: aiowamp.WAMPDict, reason: aiowamp.URI) -> None:
         ...
 
 
-class Error(MessageABC):
+class Error(_StubMessage):
     msg_type: int
     request_id: int
-    details: WAMPDict
-    error: URI
-    args: Optional[WAMPList]
-    kwargs: Optional[WAMPDict]
+    details: aiowamp.WAMPDict
+    error: aiowamp.URI
+    args: Optional[aiowamp.WAMPList]
+    kwargs: Optional[aiowamp.WAMPDict]
 
-    def __init__(self, msg_type: int, request_id: int, details: WAMPDict, error: URI,
-                 args: WAMPList = None, kwargs: WAMPDict = None) -> None:
+    def __init__(self, msg_type: int, request_id: int, details: aiowamp.WAMPDict, error: aiowamp.URI,
+                 args: aiowamp.WAMPList = None, kwargs: aiowamp.WAMPDict = None) -> None:
         ...
 
 
-class Publish(MessageABC):
+class Publish(_StubMessage):
     request_id: int
-    options: WAMPDict
-    topic: URI
-    args: Optional[WAMPList]
-    kwargs: Optional[WAMPDict]
+    options: aiowamp.WAMPDict
+    topic: aiowamp.URI
+    args: Optional[aiowamp.WAMPList]
+    kwargs: Optional[aiowamp.WAMPDict]
 
-    def __init__(self, request_id: int, options: WAMPDict, topic: URI,
-                 args: WAMPList = None, kwargs: WAMPDict = None) -> None:
+    def __init__(self, request_id: int, options: aiowamp.WAMPDict, topic: aiowamp.URI,
+                 args: aiowamp.WAMPList = None, kwargs: aiowamp.WAMPDict = None) -> None:
         ...
 
 
-class Published(MessageABC):
+class Published(_StubMessage):
     request_id: int
     publication_id: int
 
@@ -89,24 +99,16 @@ class Published(MessageABC):
         ...
 
 
-class Subscribe(MessageABC):
+class Subscribe(_StubMessage):
     request_id: int
-    options: WAMPDict
-    topic: URI
+    options: aiowamp.WAMPDict
+    topic: aiowamp.URI
 
-    def __init__(self, request_id: int, options: WAMPDict, topic: URI) -> None:
+    def __init__(self, request_id: int, options: aiowamp.WAMPDict, topic: aiowamp.URI) -> None:
         ...
 
 
-class Subscribed(MessageABC):
-    request_id: int
-    subscription_id: int
-
-    def __init__(self, request_id: int, subscription_id: int) -> None:
-        ...
-
-
-class Unsubscribe(MessageABC):
+class Subscribed(_StubMessage):
     request_id: int
     subscription_id: int
 
@@ -114,74 +116,74 @@ class Unsubscribe(MessageABC):
         ...
 
 
-class Unsubscribed(MessageABC):
+class Unsubscribe(_StubMessage):
+    request_id: int
+    subscription_id: int
+
+    def __init__(self, request_id: int, subscription_id: int) -> None:
+        ...
+
+
+class Unsubscribed(_StubMessage):
     request_id: int
 
     def __init__(self, request_id: int) -> None:
         ...
 
 
-class Event(MessageABC):
+class Event(_StubMessage):
     subscription_id: int
     publication_id: int
-    details: WAMPDict
-    args: Optional[WAMPList]
-    kwargs: Optional[WAMPDict]
+    details: aiowamp.WAMPDict
+    args: Optional[aiowamp.WAMPList]
+    kwargs: Optional[aiowamp.WAMPDict]
 
-    def __init__(self, subscription_id: int, publication_id: int, details: WAMPDict,
-                 args: WAMPList = None, kwargs: WAMPDict = None) -> None:
+    def __init__(self, subscription_id: int, publication_id: int, details: aiowamp.WAMPDict,
+                 args: aiowamp.WAMPList = None, kwargs: aiowamp.WAMPDict = None) -> None:
         ...
 
 
-class Call(MessageABC):
+class Call(_StubMessage):
     request_id: int
-    options: WAMPDict
-    procedure: URI
-    args: Optional[WAMPList]
-    kwargs: Optional[WAMPDict]
+    options: aiowamp.WAMPDict
+    procedure: aiowamp.URI
+    args: Optional[aiowamp.WAMPList]
+    kwargs: Optional[aiowamp.WAMPDict]
 
-    def __init__(self, request_id: int, options: WAMPDict, procedure: URI,
-                 args: WAMPList = None, kwargs: WAMPDict = None) -> None:
+    def __init__(self, request_id: int, options: aiowamp.WAMPDict, procedure: aiowamp.URI,
+                 args: aiowamp.WAMPList = None, kwargs: aiowamp.WAMPDict = None) -> None:
         ...
 
 
-class Cancel(MessageABC):
+class Cancel(_StubMessage):
     request_id: int
-    options: WAMPDict
+    options: aiowamp.WAMPDict
 
-    def __init__(self, request_id: int, options: WAMPDict) -> None:
+    def __init__(self, request_id: int, options: aiowamp.WAMPDict) -> None:
         ...
 
 
-class Result(MessageABC):
+class Result(_StubMessage):
     request_id: int
-    details: WAMPDict
-    args: Optional[WAMPList]
-    kwargs: Optional[WAMPDict]
+    details: aiowamp.WAMPDict
+    args: Optional[aiowamp.WAMPList]
+    kwargs: Optional[aiowamp.WAMPDict]
 
-    def __init__(self, request_id: int, details: WAMPDict,
-                 args: WAMPList = None, kwargs: WAMPDict = None) -> None:
+    def __init__(self, request_id: int, details: aiowamp.WAMPDict,
+                 args: aiowamp.WAMPList = None, kwargs: aiowamp.WAMPDict = None) -> None:
         ...
 
 
-class Register(MessageABC):
+class Register(_StubMessage):
     request_id: int
-    options: WAMPDict
-    procedure: URI
+    options: aiowamp.WAMPDict
+    procedure: aiowamp.URI
 
-    def __init__(self, request_id: int, options: WAMPDict, procedure: URI) -> None:
+    def __init__(self, request_id: int, options: aiowamp.WAMPDict, procedure: aiowamp.URI) -> None:
         ...
 
 
-class Registered(MessageABC):
-    request_id: int
-    registration_id: int
-
-    def __init__(self, request_id: int, registration_id: int) -> None:
-        ...
-
-
-class Unregister(MessageABC):
+class Registered(_StubMessage):
     request_id: int
     registration_id: int
 
@@ -189,39 +191,47 @@ class Unregister(MessageABC):
         ...
 
 
-class Unregistered(MessageABC):
+class Unregister(_StubMessage):
+    request_id: int
+    registration_id: int
+
+    def __init__(self, request_id: int, registration_id: int) -> None:
+        ...
+
+
+class Unregistered(_StubMessage):
     request_id: int
 
     def __init__(self, request_id: int) -> None:
         ...
 
 
-class Invocation(MessageABC):
+class Invocation(_StubMessage):
     request_id: int
     registration_id: int
-    details: WAMPDict
-    args: Optional[WAMPList]
-    kwargs: Optional[WAMPDict]
+    details: aiowamp.WAMPDict
+    args: Optional[aiowamp.WAMPList]
+    kwargs: Optional[aiowamp.WAMPDict]
 
-    def __init__(self, request_id: int, registration_id: int, details: WAMPDict,
-                 args: WAMPList = None, kwargs: WAMPDict = None) -> None:
+    def __init__(self, request_id: int, registration_id: int, details: aiowamp.WAMPDict,
+                 args: aiowamp.WAMPList = None, kwargs: aiowamp.WAMPDict = None) -> None:
         ...
 
 
-class Interrupt(MessageABC):
+class Interrupt(_StubMessage):
     request_id: int
-    options: WAMPDict
+    options: aiowamp.WAMPDict
 
-    def __init__(self, request_id: int, options: WAMPDict) -> None:
+    def __init__(self, request_id: int, options: aiowamp.WAMPDict) -> None:
         ...
 
 
-class Yield(MessageABC):
+class Yield(_StubMessage):
     request_id: int
-    options: WAMPDict
-    args: Optional[WAMPList]
-    kwargs: Optional[WAMPDict]
+    options: aiowamp.WAMPDict
+    args: Optional[aiowamp.WAMPList]
+    kwargs: Optional[aiowamp.WAMPDict]
 
-    def __init__(self, request_id: int, options: WAMPDict,
-                 args: WAMPList = None, kwargs: WAMPDict = None) -> None:
+    def __init__(self, request_id: int, options: aiowamp.WAMPDict,
+                 args: aiowamp.WAMPList = None, kwargs: aiowamp.WAMPDict = None) -> None:
         ...

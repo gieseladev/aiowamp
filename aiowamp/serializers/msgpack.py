@@ -2,6 +2,8 @@ import msgpack
 
 import aiowamp
 
+__all__ = ["MessagePackSerializer"]
+
 
 class MessagePackSerializer(aiowamp.SerializerABC):
     __slots__ = ()

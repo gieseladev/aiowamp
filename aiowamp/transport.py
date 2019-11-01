@@ -1,8 +1,15 @@
 import abc
+import dataclasses
+import ssl
+import urllib.parse as urlparse
+from typing import Awaitable, Callable, Dict, Optional
 
 import aiowamp.message
 
-__all__ = ["TransportABC"]
+__all__ = ["TransportABC",
+           "CommonTransportConfig", "TransportFactory",
+           "register_transport_factory",
+           "get_transport_factory", "connect_transport"]
 
 
 class TransportABC(abc.ABC):
@@ -41,3 +48,41 @@ class TransportABC(abc.ABC):
             Received message.
         """
         ...
+
+
+@dataclasses.dataclass()
+class CommonTransportConfig:
+    url: urlparse.ParseResult
+    serializer: Optional[aiowamp.SerializerABC] = None
+    ssl_context: Optional[ssl.SSLContext] = None
+
+
+TransportFactory = Callable[[CommonTransportConfig], Awaitable[TransportABC]]
+
+SCHEME_TRANSPORT_MAP: Dict[str, TransportFactory] = {}
+
+
+def register_transport_factory(*schemes: str, overwrite: bool = False):
+    def decorator(fn: TransportFactory):
+        for scheme in schemes:
+            if not overwrite and scheme in SCHEME_TRANSPORT_MAP:
+                raise ValueError(f"cannot register scheme {scheme!r} for {fn!r}. "
+                                 f"Already registered by {SCHEME_TRANSPORT_MAP[scheme]}")
+
+            SCHEME_TRANSPORT_MAP[scheme] = fn
+
+        return fn
+
+    return decorator
+
+
+def get_transport_factory(scheme: str) -> TransportFactory:
+    try:
+        return SCHEME_TRANSPORT_MAP[scheme]
+    except KeyError:
+        raise KeyError(f"no transport registered for scheme {scheme!r}") from None
+
+
+async def connect_transport(config: CommonTransportConfig) -> TransportABC:
+    connect = get_transport_factory(config.url.scheme)
+    return await connect(config)

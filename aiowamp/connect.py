@@ -1,15 +1,17 @@
 from __future__ import annotations
 
-import urllib.parse
+import urllib.parse as urlparse
 from typing import Callable, TypeVar, Union, overload
 
 import aiowamp
 
-__all__ = ["join_realm", "create_client_session", "connect"]
+__all__ = ["join_realm", "connect"]
+
+SessionT = TypeVar("SessionT", bound=aiowamp.SessionABC)
+SessionFactory = Callable[[str, aiowamp.msg.Welcome], SessionT]
 
 
-async def join_realm(transport: aiowamp.TransportABC, realm: str,
-                     details: aiowamp.WAMPDict) -> aiowamp.msg.Welcome:
+async def join_realm(transport: aiowamp.TransportABC, realm: str, details: aiowamp.WAMPDict) -> aiowamp.Session:
     await transport.send(aiowamp.msg.Hello(
         aiowamp.URI(realm),
         details,
@@ -23,55 +25,28 @@ async def join_realm(transport: aiowamp.TransportABC, realm: str,
     if not msg:
         raise aiowamp.UnexpectedMessageError(msg, aiowamp.msg.Welcome)
 
-    return msg
-
-
-SessionT = TypeVar("SessionT", bound=aiowamp.SessionABC)
-SessionFactory = Callable[[str, aiowamp.msg.Welcome], SessionT]
-
-
-@overload
-async def create_client_session(transport: aiowamp.TransportABC, realm: str) -> aiowamp.Session: ...
-
-
-@overload
-async def create_client_session(transport: aiowamp.TransportABC, realm: str, *,
-                                session_factory: SessionFactory) -> SessionT: ...
-
-
-async def create_client_session(transport: aiowamp.TransportABC, realm: str, *,
-                                session_factory: SessionFactory = aiowamp.Session) -> SessionT:
-    welcome = await join_realm(transport, realm, {})
-    return session_factory(realm, welcome)
+    return aiowamp.Session(transport, msg.session_id, realm, msg.details)
 
 
 ClientT = TypeVar("ClientT", bound=aiowamp.ClientABC)
 ClientFactory = Callable[[aiowamp.SessionABC], ClientT]
 
 
-@overload
-async def connect(url: Union[str, urllib.parse.ParseResult], *,
-                  session_factory: SessionFactory = None,
-                  ) -> aiowamp.Client: ...
+async def connect(url: Union[str, urlparse.ParseResult], *,
+                  realm: str,
+                  serializer: aiowamp.SerializerABC = None,
+                  ) -> aiowamp.Client:
+    if not isinstance(url, urlparse.ParseResult):
+        url: urlparse.ParseResult = urlparse.urlparse(url)
 
+    details = {
+        "roles": aiowamp.client.CLIENT_ROLES,
+    }
 
-@overload
-async def connect(url: Union[str, urllib.parse.ParseResult], *,
-                  session_factory: SessionFactory = None,
-                  client_factory: ClientFactory,
-                  ) -> ClientT: ...
+    transport = await aiowamp.connect_transport(aiowamp.CommonTransportConfig(
+        url,
+        serializer=serializer,
+    ))
 
-
-async def connect(url: Union[str, urllib.parse.ParseResult], *,
-                  session_factory: SessionFactory = aiowamp.Session,
-                  client_factory: ClientFactory = aiowamp.Client,
-                  ) -> ClientT:
-    if not isinstance(url, urllib.parse.ParseResult):
-        url = urllib.parse.urlparse(url)
-
-    realm = ""
-    details = {}
-    transport = aiowamp.TransportABC()
-
-    session = await create_client_session(transport, realm, session_factory=session_factory)
-    return client_factory(session)
+    session = await join_realm(transport, realm, details)
+    return aiowamp.Client(session)

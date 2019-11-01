@@ -16,7 +16,9 @@ setuptools.setup(
     long_description_content_type="text/markdown",
 
     install_requires=[
-        "websockets"
+        "aiobservable",
+        "msgpack",
+        "websockets",
     ],
     packages=setuptools.find_packages(exclude=("docs", "tests")),
 )

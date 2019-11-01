@@ -1,5 +1,5 @@
 import abc
-from typing import ClassVar, Dict, List, Optional, Type, TypeVar, Union
+from typing import ClassVar, Dict, List, Optional, Type, TypeVar, Union, cast
 import aiowamp
 
 __all__ = ["WAMPType", "WAMPList", "WAMPDict",
@@ -100,12 +100,12 @@ def message_as_type(msg: MessageABC, msg_type: Type[MsgT]) -> Optional[MsgT]:
         True
     """
     if is_message_type(msg, msg_type):
-        return msg
+        return cast(MsgT, msg)
 
     return None
 
 
-MESSAGE_TYPE_MAP = {}
+MESSAGE_TYPE_MAP: Dict[int, Type[MessageABC]] = {}
 
 
 def register_message_cls(*messages: Type[MessageABC], overwrite: bool = False) -> None:

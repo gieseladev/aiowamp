@@ -99,11 +99,8 @@ def _create_msg_cls(name: str, message_type: int,
     attrs, optional_attrs = list(attrs), list(optional_attrs)
     all_attrs = [*attrs, *(attr for attr, _ in optional_attrs)]
 
-    bound_attrs = tuple(f"self.{attr}" for attr in attrs)
-    set_attr_lines = tuple(f"{bound} = {attr}" for attr, bound in zip(all_attrs, bound_attrs))
-
     indent = 8 * " "
-    bound_attrs_str = "self.message_type," + ",".join(bound_attrs)
+    bound_attrs_str = "self.message_type," + ",".join(f"self.{attr}" for attr in attrs)
     if optional_attrs:
         to_message_list_code = textwrap.indent(
             (f"msg_list = [{bound_attrs_str}]\n" +
@@ -119,9 +116,9 @@ def _create_msg_cls(name: str, message_type: int,
         message_type=message_type,
         init_sig_str=", ".join(attrs) + "," + ",".join(f"{attr} = None" for attr, _ in optional_attrs),
         quoted_attrs_list_str=", ".join(map(repr, all_attrs)),
-        set_attr_lines=";".join(set_attr_lines),
+        set_attr_lines=";".join(f"self.{attr} = {attr}" for attr in all_attrs),
         to_message_list_code=to_message_list_code,
-        repr_attrs_str=",".join(f"{attr}={{{bound}!r}}" for attr, bound in zip(all_attrs, bound_attrs)),
+        repr_attrs_str=",".join(f"{attr}={{self.{attr}!r}}" for attr in all_attrs),
     )
 
     loc = {}

@@ -6,6 +6,8 @@ from typing import Dict, Optional, Type, Union
 
 import aiowamp
 
+__all__ = ["RawSocketTransport", "connect_raw_socket"]
+
 log = logging.getLogger(__name__)
 
 MAGIC_OCTET = b"\x7F"
@@ -23,7 +25,7 @@ class RawSocketTransport(aiowamp.TransportABC):
         send_limit: Max amount of bytes remote is willing to receive.
 
     See Also:
-        The `connect` method for opening a connection.
+        The `connect_raw_socket` method for opening a connection.
 
     Notes:
         The `start` method needs to be called before `recv` can read any messages.
@@ -248,7 +250,7 @@ async def perform_client_handshake(reader: asyncio.StreamReader, writer: asyncio
     # use 1-slice to get bytes instead of int
     if resp[0:1] != MAGIC_OCTET:
         raise aiowamp.TransportError("received invalid magic octet while performing handshake. "
-                                     f"Expected {MAGIC_OCTET}, got {resp[0]}")
+                                     f"Expected {MAGIC_OCTET!r}, got {resp[0]}")
 
     if resp[2:] != b"\x00\x00":
         raise aiowamp.TransportError("expected 3rd and 4th octet to be all zeroes (reserved). "
@@ -291,9 +293,9 @@ def is_secure_scheme(scheme: str) -> bool:
     return scheme in {"tcps", "tcp4s", "tcp6s", "rss"}
 
 
-async def connect(url: Union[str, urlparse.ParseResult], serializer: aiowamp.SerializerABC, *,
-                  ssl_context: ssl.SSLContext = None,
-                  recv_limit: int = 0) -> RawSocketTransport:
+async def _connect(url: Union[str, urlparse.ParseResult], serializer: aiowamp.SerializerABC, *,
+                   ssl_context: ssl.SSLContext = None,
+                   recv_limit: int = 0) -> RawSocketTransport:
     """Connect to a WAMP router over raw socket.
 
     Args:
@@ -332,6 +334,22 @@ async def connect(url: Union[str, urlparse.ParseResult], serializer: aiowamp.Ser
         reader, writer, recv_limit, get_serializer_protocol(serializer),
         serializer=serializer,
     )
+
+
+@aiowamp.register_transport_factory("tcp", "tcps",
+                                    "tcp4", "tcp4s",
+                                    "tcp6", "tcp6s",
+                                    "rs", "rss")
+async def _connect_config(config: aiowamp.CommonTransportConfig) -> RawSocketTransport:
+    return await _connect(config.url, config.serializer or aiowamp.JSONSerializer(),
+                          ssl_context=config.ssl_context)
+
+
+async def connect_raw_socket(*args, **kwargs) -> RawSocketTransport:
+    if args and isinstance(args[0], aiowamp.CommonTransportConfig):
+        return await _connect_config(*args, **kwargs)
+
+    return await _connect(*args, **kwargs)
 
 
 _BUILTIN_PROTOCOLS: Dict[Type[aiowamp.SerializerABC], int] = {

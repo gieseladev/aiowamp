@@ -53,13 +53,16 @@ to the requirements.
 # Session Close
 
 
+CLOSE_NORMAL = URI("wamp.close.normal")
+"""Normal close."""
+
 SYSTEM_SHUTDOWN = URI("wamp.close.system_shutdown")
 """The Peer is shutting down completely.
 Used as a GOODBYE (or ABORT) reason.
 """
 
 CLOSE_REALM = URI("wamp.close.close_realm")
-"""The Peer want to leave the realm - used as a GOODBYE reason."""
+"""The Peer wants to leave the realm - used as a GOODBYE reason."""
 
 GOODBYE_AND_OUT = URI("wamp.close.goodbye_and_out")
 """A Peer acknowledges ending of a session - used as a GOODBYE reply reason."""

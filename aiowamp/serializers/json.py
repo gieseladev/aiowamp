@@ -2,6 +2,8 @@ import json
 
 import aiowamp
 
+__all__ = ["JSONSerializer"]
+
 
 # TODO binary blob
 
