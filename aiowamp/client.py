@@ -5,17 +5,73 @@ import asyncio
 import contextlib
 import inspect
 import logging
-from typing import Any, AsyncIterator, Awaitable, Callable, Dict, Optional, Type, TypeVar, Union
+from typing import Any, AsyncIterator, Awaitable, Callable, Dict, Mapping, NewType, Optional, Tuple, Type, TypeVar, \
+    Union
 
 import aiowamp
 
-__all__ = ["ClientABC", "Client"]
+__all__ = ["ClientABC", "Client",
+           "CancelMode", "CANCEL_SKIP", "CANCEL_KILL", "CANCEL_KILL_NO_WAIT",
+           "InvocationPolicy", "INVOKE_SINGLE", "INVOKE_ROUND_ROBIN", "INVOKE_RANDOM", "INVOKE_FIRST", "INVOKE_LAST",
+           "MatchPolicy", "MATCH_PREFIX", "MATCH_WILDCARD",
+           "SubscriptionHandler",
+           "InvocationResult", "InvocationHandlerResult", "InvocationHandler"]
 
 log = logging.getLogger(__name__)
 
+CancelMode = NewType("CancelMode", str)
+"""Cancel mode used to cancel a call."""
+CANCEL_SKIP = CancelMode("skip")
+CANCEL_KILL = CancelMode("kill")
+CANCEL_KILL_NO_WAIT = CancelMode("killnowait")
+
+InvocationPolicy = NewType("InvocationPolicy", str)
+"""Invocation policy for calling a procedure."""
+
+INVOKE_SINGLE = InvocationPolicy("single")
+INVOKE_ROUND_ROBIN = InvocationPolicy("roundrobin")
+INVOKE_RANDOM = InvocationPolicy("random")
+INVOKE_FIRST = InvocationPolicy("first")
+INVOKE_LAST = InvocationPolicy("last")
+
+MatchPolicy = NewType("MatchPolicy", str)
+"""Match policy for URIs."""
+
+MATCH_PREFIX = MatchPolicy("prefix")
+MATCH_WILDCARD = MatchPolicy("wildcard")
+
 T = TypeVar("T")
 MaybeAwaitable = Union[T, Awaitable[T]]
+"""Either a concrete object or an awaitable."""
+
 SubscriptionHandler = Callable[[aiowamp.msg.Event], MaybeAwaitable[Any]]
+
+
+class InvocationResult:
+    __slots__ = ("args", "kwargs")
+
+    args: Tuple[aiowamp.WAMPType, ...]
+    kwargs: Mapping[str, aiowamp.WAMPType]
+
+    def __init__(self, *args: aiowamp.WAMPType, **kwargs: aiowamp.WAMPType) -> None:
+        self.args = args
+        self.kwargs = kwargs
+
+    def __repr__(self) -> str:
+        arg_str = ", ".join(map(repr, self.args))
+        kwarg_str = ", ".join(f"{key} = {value!r}" for key, value in self.kwargs.items())
+        if kwarg_str and arg_str:
+            join_str = ", "
+        else:
+            join_str = ""
+
+        return f"{type(self).__qualname__}({arg_str}{join_str}{kwarg_str})"
+
+
+InvocationHandlerResult = Union[Tuple[aiowamp.WAMPType, ...], InvocationResult, aiowamp.WAMPType]
+# TODO call with custom invocation type which provides the custom send_progress
+#  methods
+InvocationHandler = Callable[[aiowamp.msg.Invocation], MaybeAwaitable[InvocationHandlerResult]]
 
 
 class CallABC(Awaitable[aiowamp.msg.Result], AsyncIterator[aiowamp.msg.Result], abc.ABC):
@@ -61,7 +117,8 @@ class CallABC(Awaitable[aiowamp.msg.Result], AsyncIterator[aiowamp.msg.Result], 
         ...
 
     @abc.abstractmethod
-    async def cancel(self, options: aiowamp.WAMPDict = None) -> None:
+    async def cancel(self, cancel_mode: CancelMode = None, *,
+                     options: aiowamp.WAMPDict = None) -> None:
         ...
 
 
@@ -82,8 +139,17 @@ class ClientABC(abc.ABC):
         ...
 
     @abc.abstractmethod
+    async def register(self, procedure: str, handler: InvocationHandler, *,
+                       disclose_caller: bool = None,
+                       match_policy: MatchPolicy = None,
+                       invocation_policy: InvocationPolicy = None,
+                       options: aiowamp.WAMPDict = None) -> None:
+        ...
+
+    @abc.abstractmethod
     def call(self, procedure: str, *args: aiowamp.WAMPType,
              kwargs: aiowamp.WAMPDict = None,
+             cancel_mode: CancelMode = None,
              call_timeout: float = None,
              disclose_me: bool = None,
              options: aiowamp.WAMPDict = None) -> CallABC:
@@ -91,6 +157,7 @@ class ClientABC(abc.ABC):
 
     @abc.abstractmethod
     async def subscribe(self, topic: str, callback: SubscriptionHandler, *,
+                        match_policy: MatchPolicy = None,
                         options: aiowamp.WAMPDict = None) -> None:
         ...
 
@@ -102,6 +169,9 @@ class ClientABC(abc.ABC):
     async def publish(self, topic: str, *args: aiowamp.WAMPType,
                       kwargs: aiowamp.WAMPDict = None,
                       acknowledge: bool = True,
+                      # TODO blackwhitelisting
+                      exclude_me: bool = None,
+                      disclose_me: bool = None,
                       options: aiowamp.WAMPDict = None) -> None:
         ...
 
@@ -170,6 +240,7 @@ class Client(ClientABC):
 
             log.warning("%s: message with unexpected request id: %r", self, msg)
 
+        # received event
         event = aiowamp.message_as_type(msg, aiowamp.msg.Event)
         if event:
             try:
@@ -218,8 +289,17 @@ class Client(ClientABC):
         finally:
             self._cleanup()
 
+    async def register(self, procedure: str, handler: InvocationHandler, *, disclose_caller: bool = None,
+                       match_policy: MatchPolicy = None, invocation_policy: InvocationPolicy = None,
+                       options: aiowamp.WAMPDict = None) -> None:
+        if inspect.isasyncgenfunction(handler):
+            pass
+
+        raise NotImplementedError("WIP")
+
     def call(self, procedure: str, *args: aiowamp.WAMPType,
              kwargs: aiowamp.WAMPDict = None,
+             cancel_mode: CancelMode = None,
              call_timeout: float = None,
              disclose_me: bool = None,
              options: aiowamp.WAMPDict = None) -> CallABC:
@@ -230,13 +310,18 @@ class Client(ClientABC):
             options = _set_value(options, "disclose_me", disclose_me)
 
         req_id = next(self.id_gen)
-        call = Call(self.session, aiowamp.msg.Call(
-            req_id,
-            options or {},
-            aiowamp.URI(procedure),
-            list(args) or None,
-            kwargs or None,
-        ))
+        call = Call(
+            self.session,
+            aiowamp.msg.Call(
+                req_id,
+                options or {},
+                aiowamp.URI(procedure),
+                list(args) or None,
+                kwargs,
+            ),
+            cancel_mode=cancel_mode or CANCEL_KILL_NO_WAIT
+        )
+
         self.__ongoing_calls[req_id] = call
 
         return call
@@ -253,8 +338,12 @@ class Client(ClientABC):
         return self.__sub_ids.get(aiowamp.URI(topic))
 
     async def subscribe(self, topic: str, callback: SubscriptionHandler, *,
+                        match_policy: MatchPolicy = None,
                         options: aiowamp.WAMPDict = None) -> None:
         topic = aiowamp.URI(topic)
+
+        if match_policy:
+            options = _set_value(options, "match", match_policy)
 
         req_id = next(self.id_gen)
         async with self._expecting_response(req_id) as resp:
@@ -291,9 +380,17 @@ class Client(ClientABC):
     async def publish(self, topic: str, *args: aiowamp.WAMPType,
                       kwargs: aiowamp.WAMPDict = None,
                       acknowledge: bool = True,
+                      exclude_me: bool = None,
+                      disclose_me: bool = None,
                       options: aiowamp.WAMPDict = None) -> None:
-        if options or acknowledge:
+        if acknowledge or (options and "acknowledge" in options):
             options = _set_value(options, "acknowledge", acknowledge)
+
+        if exclude_me is not None:
+            options = _set_value(options, "exclude_me", exclude_me)
+
+        if disclose_me is not None:
+            options = _set_value(options, "disclose_me", disclose_me)
 
         req_id = next(self.id_gen)
         send_coro = self.session.send(aiowamp.msg.Publish(
@@ -301,7 +398,7 @@ class Client(ClientABC):
             options or {},
             aiowamp.URI(topic),
             list(args) or None,
-            kwargs or None,
+            kwargs,
         ))
 
         # don't wait for a response when acknowledge=False
@@ -328,17 +425,18 @@ class Call(CallABC):
     _call_msg: aiowamp.msg.Call
     _call_sent: bool
 
-    __cancel_mode: str
+    __cancel_mode: CancelMode
 
     __result_fut: asyncio.Future
     __progress_queue: Optional[asyncio.Queue]
 
-    def __init__(self, session: aiowamp.SessionABC, call: aiowamp.msg.Call) -> None:
+    def __init__(self, session: aiowamp.SessionABC, call: aiowamp.msg.Call, *,
+                 cancel_mode: CancelMode) -> None:
         self.session = session
         self._call_msg = call
         self._call_sent = False
 
-        self.__cancel_mode = "killnowait"
+        self.__cancel_mode = cancel_mode
 
         loop = asyncio.get_event_loop()
         assert loop.is_running(), "loop isn't running"
@@ -435,16 +533,19 @@ class Call(CallABC):
     async def next_progress(self) -> Optional[aiowamp.msg.Result]:
         return await self.__next_progress()
 
-    async def cancel(self, options: aiowamp.WAMPDict = None) -> None:
+    async def cancel(self, cancel_mode: CancelMode = None, *,
+                     options: aiowamp.WAMPDict = None) -> None:
         self.__result_fut.cancel()
 
         if not self._call_sent:
             log.debug("%s: cancelled before call was sent", self)
             return
 
+        if not cancel_mode:
+            cancel_mode = self.__cancel_mode
+
         options = options or {}
-        if self.__cancel_mode:
-            options.setdefault("mode", self.__cancel_mode)
+        options["mode"] = cancel_mode
 
         await self.session.send(aiowamp.msg.Cancel(self._call_msg.request_id, options))
         try:
@@ -474,6 +575,16 @@ def _set_value(d: Optional[T], key: str, value: aiowamp.WAMPType) -> T:
 
 
 async def call_async_fn(f: Callable[..., MaybeAwaitable[T]], *args, **kwargs) -> T:
+    """Call function and await result if awaitable.
+
+    Args:
+        f: Function to call.
+        *args: Arguments to pass to the function.
+        **kwargs: Keyword-arguments to pass to the function.
+
+    Returns:
+        The result of the function.
+    """
     res = f(*args, **kwargs)
     if inspect.isawaitable(res):
         res = await res
@@ -486,30 +597,38 @@ CLIENT_ROLES: aiowamp.WAMPDict = {
         "features": {
             "subscriber_blackwhite_listing": True,
             "publisher_exclusion": True,
+            "publisher_identification": True,
         },
     },
     "subscriber": {
         "features": {
-            "pattern_based_subscription": True,
             "publisher_identification": True,
+            "publication_trustlevels": True,
+            "pattern_based_subscription": True,
+            "sharded_subscription": True,  # TODO maybe?
+            "event_history": True,
+            "subscription_revocation": True,  # TODO
         },
     },
     "callee": {
         "features": {
+            "progressive_call_results": True,
+            "call_timeout": True,
+            "call_canceling": True,
+            "caller_identification": True,
+            "call_trustlevels": True,
             "pattern_based_registration": True,
             "shared_registration": True,
-            "call_canceling": True,
-            "call_timeout": True,
-            "caller_identification": True,
-            "progressive_call_results": True,
+            "sharded_registration": True,  # TODO maybe not
+            "registration_revocation": True,  # TODO
         },
     },
     "caller": {
         "features": {
-            "call_canceling": True,
-            "call_timeout": True,
-            "caller_identification": True,
             "progressive_call_results": True,
+            "call_timeout": True,
+            "call_canceling": True,
+            "caller_identification": True,
         },
     },
 }

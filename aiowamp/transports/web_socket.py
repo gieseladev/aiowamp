@@ -1,5 +1,5 @@
 import ssl
-from typing import Dict, Sequence, Tuple, Type, Union, overload, cast
+from typing import Dict, Sequence, Tuple, Type, Union, cast, overload
 
 import websockets
 from websockets.framing import OP_BINARY, OP_TEXT

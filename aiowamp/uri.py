@@ -1,12 +1,47 @@
 class URI(str):
-    """Representation of a WAMP URI."""
+    """WAMP URI."""
     __slots__ = ()
 
     def __repr__(self) -> str:
         return f"URI({str(self)!r})"
 
-    def valid_uri(self, strict: bool) -> bool:
-        pass
+    def prefix_match(self, prefix: str) -> bool:
+        """Check whether the URI matches the prefix.
+
+        This is just `str.startswith`, but relabelled so it makes more sense in
+        the context.
+
+        Args:
+            prefix: Prefix to check against.
+
+        Returns:
+            Whether the URI has the given prefix.
+        """
+        return self.startswith(prefix)
+
+    def wildcard_match(self, wildcard: str) -> bool:
+        """Check if the URI matches the wildcard.
+
+        Wildcards have empty URI components which can match anything
+        (apart from '.').
+
+        Args:
+            wildcard: Wildcard to check against.
+
+        Returns:
+            Whether the URI matches the wildcard.
+        """
+        self_parts = self.split(".")
+        wc_parts = wildcard.split(".")
+
+        if len(self_parts) != len(wc_parts):
+            return False
+
+        for self_part, wc_part in zip(self_parts, wc_parts):
+            if wc_part and wc_part != self_part:
+                return False
+
+        return True
 
 
 # Interaction

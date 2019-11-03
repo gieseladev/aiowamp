@@ -20,13 +20,10 @@ async def main():
 
     print("FINAL", await call)
 
-    call = c.call("wamp.session.list")
     await asyncio.sleep(.1)
     await c.close()
 
-    await call
-
-    print(repr(c.session._Session__goodbye_fut.result()))
+    print(repr(c.session.goodbye))
 
 
 asyncio.run(main())

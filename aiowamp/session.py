@@ -3,7 +3,7 @@ from __future__ import annotations
 import abc
 import asyncio
 import logging
-from typing import Optional
+from typing import Dict, Optional, Set
 
 import aiobservable
 
@@ -44,6 +44,16 @@ class SessionABC(abc.ABC):
 
     @property
     @abc.abstractmethod
+    def goodbye(self) -> Optional[aiowamp.msg.Goodbye]:
+        ...
+
+    @property
+    @abc.abstractmethod
+    def roles(self) -> Set[str]:
+        ...
+
+    @property
+    @abc.abstractmethod
     def message_handler(self) -> aiobservable.ObservableABC[aiowamp.MessageABC]:
         ...
 
@@ -57,10 +67,21 @@ class SessionABC(abc.ABC):
         """Send a message using the underlying transport."""
         ...
 
+    @abc.abstractmethod
+    def get_features(self, role: str) -> Set[str]:
+        ...
+
+    def has_role(self, role: str) -> bool:
+        return role in self.roles
+
+    def has_feature(self, role: str, feature: str) -> bool:
+        return feature in self.get_features(role)
+
 
 class Session(SessionABC):
     __slots__ = ("transport",
                  "__session_id", "__realm", "__details",
+                 "__roles",
                  "__goodbye_fut",
                  "__message_handler", "__receive_task")
 
@@ -69,6 +90,8 @@ class Session(SessionABC):
     __session_id: int
     __realm: str
     __details: aiowamp.WAMPDict
+
+    __roles: Dict[str, Set[str]]
 
     __goodbye_fut: Optional[asyncio.Future]
 
@@ -81,6 +104,8 @@ class Session(SessionABC):
         self.__session_id = session_id
         self.__realm = realm
         self.__details = details
+
+        self.__roles = get_role_map(details)
 
         self.__goodbye_fut = None
 
@@ -103,6 +128,17 @@ class Session(SessionABC):
     @property
     def details(self) -> aiowamp.WAMPDict:
         return self.__details
+
+    @property
+    def goodbye(self) -> Optional[aiowamp.msg.Goodbye]:
+        try:
+            return self.__goodbye_fut.result()
+        except Exception:
+            return None
+
+    @property
+    def roles(self) -> Set[str]:
+        return set(self.__roles)
 
     @property
     def message_handler(self) -> aiobservable.ObservableABC[aiowamp.MessageABC]:
@@ -178,3 +214,42 @@ class Session(SessionABC):
 
         await goodbye_fut
         await self.transport.close()
+
+    def has_role(self, role: str) -> bool:
+        # faster than `role in set(self.__roles)`
+        return role in self.__roles
+
+    def get_features(self, role: str) -> Set[str]:
+        try:
+            return self.__roles[role]
+        except KeyError:
+            return set()
+
+
+def get_role_map(details: aiowamp.WAMPDict) -> Dict[str, Set[str]]:
+    try:
+        roles = details["roles"]
+    except KeyError:
+        return {}
+
+    if not isinstance(roles, dict):
+        return {}
+
+    role_map: Dict[str, Set[str]] = {}
+    for role, role_dict in roles.items():
+        feature_set: Set[str] = set()
+        role_map[role] = feature_set
+
+        try:
+            features = role_dict["features"]
+        except KeyError:
+            continue
+
+        if not isinstance(features, dict):
+            continue
+
+        for feature, supported in features.items():
+            if supported:
+                feature_set.add(feature)
+
+    return role_map

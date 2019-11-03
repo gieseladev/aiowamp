@@ -1,5 +1,6 @@
 import abc
 from typing import ClassVar, Dict, List, Optional, Type, TypeVar, Union, cast
+
 import aiowamp
 
 __all__ = ["WAMPType", "WAMPList", "WAMPDict",

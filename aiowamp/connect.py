@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import urllib.parse as urlparse
-from typing import Callable, TypeVar, Union, overload
+from typing import Callable, TypeVar, Union
 
 import aiowamp
 

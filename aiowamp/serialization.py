@@ -1,6 +1,6 @@
 import abc
 
-from aiowamp.message import MessageABC
+import aiowamp
 
 __all__ = ["SerializerABC"]
 
@@ -12,9 +12,9 @@ class SerializerABC(abc.ABC):
         return f"{type(self).__qualname__} {id(self):x}"
 
     @abc.abstractmethod
-    def serialize(self, msg: MessageABC) -> bytes:
+    def serialize(self, msg: aiowamp.MessageABC) -> bytes:
         ...
 
     @abc.abstractmethod
-    def deserialize(self, data: bytes) -> MessageABC:
+    def deserialize(self, data: bytes) -> aiowamp.MessageABC:
         ...
