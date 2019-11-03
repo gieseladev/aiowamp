@@ -164,9 +164,14 @@ def build_message_from_list(msg_list: WAMPList) -> MessageABC:
         Built message.
     """
     try:
-        msg_cls = get_message_cls(msg_list[0])
+        msg_type = msg_list[0]
     except IndexError:
         raise aiowamp.InvalidMessage("received message without message type") from None
+
+    if not isinstance(msg_type, int):
+        raise aiowamp.InvalidMessage("received message without integer message type")
+
+    msg_cls = get_message_cls(msg_type)
 
     try:
         return msg_cls.from_message_list(msg_list[1:])

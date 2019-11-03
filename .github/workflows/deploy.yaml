@@ -1,0 +1,31 @@
+name: Deploy
+on:
+  release:
+    types: [published]
+
+jobs:
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v1
+
+      - name: Setup Python
+        uses: actions/setup-python@v1
+
+      - name: Install dependencies
+        run: |
+          pip install -U pipenv
+          pipenv install --dev --deploy
+
+      - name: Run tests
+        run: pipenv run tests
+
+      - name: Build distribution
+        run: pipenv run build
+
+      - name: Publish distribution to PyPI
+        uses: pypa/gh-action-pypi-publish@master
+        with:
+          user: ${{ secrets.PYPI_USERNAME }}
+          password: ${{ secrets.PYPI_PASSWORD }}

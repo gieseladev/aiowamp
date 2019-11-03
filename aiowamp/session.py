@@ -87,6 +87,11 @@ class Session(SessionABC):
         self.__message_handler = None
         self.__receive_task = None
 
+    def __repr__(self) -> str:
+        return f"{type(self).__qualname__}({self.transport}, " \
+               f"session_id={self.session_id!r}, realm={self.realm!r}, " \
+               f"details={self.details!r})"
+
     @property
     def session_id(self) -> int:
         return self.__session_id

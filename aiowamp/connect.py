@@ -21,11 +21,11 @@ async def join_realm(transport: aiowamp.TransportABC, realm: str, details: aiowa
 
     # TODO challenge
 
-    msg = aiowamp.message_as_type(msg, aiowamp.msg.Welcome)
-    if not msg:
+    welcome = aiowamp.message_as_type(msg, aiowamp.msg.Welcome)
+    if not welcome:
         raise aiowamp.UnexpectedMessageError(msg, aiowamp.msg.Welcome)
 
-    return aiowamp.Session(transport, msg.session_id, realm, msg.details)
+    return aiowamp.Session(transport, welcome.session_id, realm, welcome.details)
 
 
 ClientT = TypeVar("ClientT", bound=aiowamp.ClientABC)
@@ -37,7 +37,7 @@ async def connect(url: Union[str, urlparse.ParseResult], *,
                   serializer: aiowamp.SerializerABC = None,
                   ) -> aiowamp.Client:
     if not isinstance(url, urlparse.ParseResult):
-        url: urlparse.ParseResult = urlparse.urlparse(url)
+        url = urlparse.urlparse(url)
 
     details = {
         "roles": aiowamp.client.CLIENT_ROLES,

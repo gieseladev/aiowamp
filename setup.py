@@ -20,5 +20,9 @@ setuptools.setup(
         "msgpack",
         "websockets",
     ],
+
     packages=setuptools.find_packages(exclude=("docs", "tests")),
+    package_data={
+        "aiowamp": ["py.typed"],
+    },
 )

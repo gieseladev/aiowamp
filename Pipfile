@@ -4,12 +4,16 @@ url = "https://pypi.org/simple"
 verify_ssl = true
 
 [dev-packages]
+pytest = "*"
+pytest-asyncio = "*"
 mypy = "*"
 
 [packages]
-websockets = "*"
-msgpack = "*"
 aiobservable = "*"
+msgpack = "*"
+websockets = "*"
 
-[requires]
-python_version = "3.8"
+[scripts]
+build = "python setup.py sdist bdist_wheel"
+mypy = "mypy ."
+tests = "python -m pytest"

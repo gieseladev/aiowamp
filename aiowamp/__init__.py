@@ -1,4 +1,3 @@
-from .client import *
 from .errors import *
 from .id import *
 from .message import *
@@ -10,6 +9,7 @@ from .uri import *
 
 # second import step
 from . import msg, transports
+from .client import *
 from .connect import *
 
 __version__ = "0.0.1"

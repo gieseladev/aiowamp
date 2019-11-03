@@ -100,7 +100,7 @@ class RawSocketTransport(aiowamp.TransportABC):
         header = b"\x00" + int_to_bytes(len(data))
 
         if log.isEnabledFor(logging.DEBUG):
-            log.debug("%s: writing header: %s", self, header.hex(":"))
+            log.debug("%s: writing header: %s", self, header.hex())
             log.debug("%s: writing data: %s", self, data.hex())
 
         self.writer.write(header)
@@ -108,6 +108,8 @@ class RawSocketTransport(aiowamp.TransportABC):
         await self.writer.drain()
 
     async def __read_once(self) -> None:
+        assert self._msg_queue
+
         try:
             header = await self.reader.readexactly(4)
         except asyncio.IncompleteReadError:
@@ -157,7 +159,7 @@ class RawSocketTransport(aiowamp.TransportABC):
 
     async def recv(self) -> aiowamp.MessageABC:
         try:
-            return await self._msg_queue.get()
+            return await self._msg_queue.get()  # type: ignore
         except AttributeError:
             raise RuntimeError("cannot receive message before message loop is started.") from None
 
@@ -234,7 +236,7 @@ async def perform_client_handshake(reader: asyncio.StreamReader, writer: asyncio
     handshake_data.extend((0, 0))
 
     if log.isEnabledFor(logging.DEBUG):
-        log.debug("sending handshake: %s", handshake_data.hex(":"))
+        log.debug("sending handshake: %s", handshake_data.hex())
 
     writer.write(handshake_data)
     await writer.drain()
@@ -245,7 +247,7 @@ async def perform_client_handshake(reader: asyncio.StreamReader, writer: asyncio
         raise aiowamp.TransportError("remote closed connection during handshake") from e
 
     if log.isEnabledFor(logging.DEBUG):
-        log.debug("received handshake response: %s", resp.hex(":"))
+        log.debug("received handshake response: %s", resp.hex())
 
     # use 1-slice to get bytes instead of int
     if resp[0:1] != MAGIC_OCTET:
@@ -254,7 +256,7 @@ async def perform_client_handshake(reader: asyncio.StreamReader, writer: asyncio
 
     if resp[2:] != b"\x00\x00":
         raise aiowamp.TransportError("expected 3rd and 4th octet to be all zeroes (reserved). "
-                                     f"Saw {resp[2:].hex(':')}")
+                                     f"Saw {resp[2:].hex()}")
 
     proto_echo = resp[1] & 0xf
     # if the first 4 bits are 0 it's an error response
@@ -294,7 +296,7 @@ def is_secure_scheme(scheme: str) -> bool:
 
 
 async def _connect(url: Union[str, urlparse.ParseResult], serializer: aiowamp.SerializerABC, *,
-                   ssl_context: ssl.SSLContext = None,
+                   ssl_context: Union[ssl.SSLContext, bool] = None,
                    recv_limit: int = 0) -> RawSocketTransport:
     """Connect to a WAMP router over raw socket.
 
@@ -309,7 +311,7 @@ async def _connect(url: Union[str, urlparse.ParseResult], serializer: aiowamp.Se
         THe connected raw socket transport.
     """
     if not isinstance(url, urlparse.ParseResult):
-        url: urlparse.ParseResult = urlparse.urlparse(url)
+        url = urlparse.urlparse(url)
 
     if is_secure_scheme(url.scheme):
         if not ssl_context:

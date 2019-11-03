@@ -1,5 +1,5 @@
 import ssl
-from typing import Dict, Sequence, Tuple, Type, Union, overload
+from typing import Dict, Sequence, Tuple, Type, Union, overload, cast
 
 import websockets
 from websockets.framing import OP_BINARY, OP_TEXT
@@ -43,7 +43,11 @@ class WebSocketTransport(aiowamp.TransportABC):
         await self.ws_client.write_frame(True, self.__payload_opcode, self.serializer.serialize(msg))
 
     async def recv(self) -> aiowamp.MessageABC:
-        return self.serializer.deserialize(await self.ws_client.recv())
+        msg = await self.ws_client.recv()
+        if isinstance(msg, str):
+            msg = msg.encode()
+
+        return self.serializer.deserialize(msg)
 
 
 async def _connect(uri: str,
@@ -59,9 +63,11 @@ async def _connect(uri: str,
 
     client = await websockets.connect(
         uri,
-        subprotocols=tuple(proto_map),
+        subprotocols=cast(Tuple[websockets.Subprotocol], tuple(proto_map)),
         ssl=ssl_context,
     )
+
+    assert client.subprotocol is not None
 
     # get the chosen protocol
     serializer, is_text = proto_map[client.subprotocol]
@@ -74,13 +80,12 @@ async def _connect(uri: str,
 
 @aiowamp.register_transport_factory("ws", "wss", "http", "https")
 async def _connect_config(config: aiowamp.CommonTransportConfig) -> WebSocketTransport:
+    url = config.url
     # switch to corresponding ws
-    if config.url.scheme == "http":
-        config.url.scheme = "ws"
-    elif config.url.scheme == "https":
-        config.url.scheme = "wss"
+    if url.scheme.startswith("http"):
+        url = url._replace(scheme="ws" + url.scheme[4:])
 
-    return await _connect(str(config.url), config.serializer,
+    return await _connect(str(url), config.serializer,
                           ssl_context=config.ssl_context)
 
 
@@ -128,7 +133,7 @@ async def connect_web_socket(*args, **kwargs) -> WebSocketTransport:
 # TODO improve this part
 
 def build_protocol_map(*serializers: aiowamp.SerializerABC) \
-        -> Dict[websockets.Subprotocol, Tuple[aiowamp.SerializerABC, bool]]:
+        -> Dict[str, Tuple[aiowamp.SerializerABC, bool]]:
     protocols = {}
     for serializer in serializers:
         proto, is_text = _get_serializer_sub_protocol(serializer)
@@ -137,11 +142,11 @@ def build_protocol_map(*serializers: aiowamp.SerializerABC) \
     return protocols
 
 
-def build_all_protocol_map() -> Dict[websockets.Subprotocol, Tuple[aiowamp.SerializerABC, bool]]:
+def build_all_protocol_map() -> Dict[str, Tuple[aiowamp.SerializerABC, bool]]:
     return build_protocol_map(*(proto() for proto in _BUILTIN_PROTOCOLS))
 
 
-ProtoTuple = Tuple[websockets.Subprotocol, bool]
+ProtoTuple = Tuple[str, bool]
 """Type of a protocol tuple.
 
 2-tuple containing the sub protocol and a bool denoting whether the data should 
@@ -149,8 +154,8 @@ be sent over a web socket text frame.
 """
 
 _BUILTIN_PROTOCOLS: Dict[Type[aiowamp.SerializerABC], ProtoTuple] = {
-    aiowamp.serializers.JSONSerializer: (websockets.Subprotocol("wamp.2.json"), True),
-    aiowamp.serializers.MessagePackSerializer: (websockets.Subprotocol("wamp.2.msgpack"), False),
+    aiowamp.serializers.JSONSerializer: ("wamp.2.json", True),
+    aiowamp.serializers.MessagePackSerializer: ("wamp.2.msgpack", False),
 }
 
 
