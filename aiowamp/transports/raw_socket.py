@@ -332,10 +332,15 @@ async def _connect(url: Union[str, urlparse.ParseResult], serializer: aiowamp.Se
     writer = asyncio.StreamWriter(transport, protocol, reader, loop)
 
     log.debug("performing handshake")
-    return await perform_client_handshake(
-        reader, writer, recv_limit, get_serializer_protocol(serializer),
-        serializer=serializer,
-    )
+    try:
+        return await perform_client_handshake(
+            reader, writer, recv_limit, get_serializer_protocol(serializer),
+            serializer=serializer,
+        )
+    except Exception:
+        # don't wait for the connection to close
+        writer.close()
+        raise
 
 
 @aiowamp.register_transport_factory("tcp", "tcps",
