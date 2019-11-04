@@ -10,7 +10,6 @@ from .uri import *
 # second import step
 from . import msg, transports
 from .client import *
-from .connect import *
 
 __version__ = "0.0.1"
 __author__ = "Giesela Inc."
