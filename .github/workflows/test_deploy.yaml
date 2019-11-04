@@ -1,11 +1,38 @@
-name: Deploy
+name: Test and deploy
 on:
+  push:
   release:
     types: [published]
 
 jobs:
+  test:
+    name: Test with Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version:
+          - "3.7"
+          - "3.x"
+    steps:
+      - uses: actions/checkout@v1
+
+      - name: Setup Python
+        uses: actions/setup-python@v1
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          pip install -U pipenv
+          pipenv install --dev --deploy
+
+      - name: Run tests
+        run: pipenv run tests
+
   deploy:
+    if: github.event_name == "release"
     name: Deploy
+    needs: test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v1
@@ -17,9 +44,6 @@ jobs:
         run: |
           pip install -U pipenv
           pipenv install --dev --deploy
-
-      - name: Run tests
-        run: pipenv run tests
 
       - name: Build distribution
         run: pipenv run build
