@@ -30,7 +30,7 @@ jobs:
         run: pipenv run tests
 
   deploy:
-    if: github.event_name == "release"
+    if: github.event_name == 'release'
     name: Deploy
     needs: test
     runs-on: ubuntu-latest

@@ -6,7 +6,7 @@ from typing import Any, AsyncIterator, Awaitable, Callable, Mapping, Optional, T
 import aiowamp
 
 __all__ = ["ClientABC", "CallABC",
-           "InvocationHandler", "InvocationHandlerResult", "InvocationResult",
+           "InvocationABC", "InvocationHandler", "InvocationHandlerResult", "InvocationResult",
            "SubscriptionHandler",
            "MaybeAwaitable"]
 
@@ -36,10 +36,74 @@ class InvocationResult:
         return f"{type(self).__qualname__}({arg_str}{join_str}{kwarg_str})"
 
 
+class InvocationABC(abc.ABC):
+    __slots__ = ()
+
+    def __str__(self) -> str:
+        return f"{type(self).__qualname__} {self.request_id}"
+
+    @property
+    @abc.abstractmethod
+    def request_id(self) -> int:
+        ...
+
+    @property
+    @abc.abstractmethod
+    def args(self) -> Tuple[aiowamp.WAMPType, ...]:
+        ...
+
+    @property
+    @abc.abstractmethod
+    def kwargs(self) -> aiowamp.WAMPDict:
+        ...
+
+    def __getitem__(self, key: Union[int, str]) -> aiowamp.WAMPType:
+        if isinstance(key, str):
+            return self.kwargs[key]
+
+        return self.args[key]
+
+    @property
+    @abc.abstractmethod
+    def details(self) -> aiowamp.WAMPDict:
+        ...
+
+    @property
+    def may_send_progress(self) -> bool:
+        try:
+            return bool(self.details["receive_progress"])
+        except KeyError:
+            return False
+
+    @property
+    def caller_id(self) -> Optional[int]:
+        return self.details.get("caller")
+
+    @property
+    def trust_level(self) -> Optional[int]:
+        return self.details.get("trustlevel")
+
+    @abc.abstractmethod
+    async def send_progress(self, *args: aiowamp.WAMPType,
+                            kwargs: aiowamp.WAMPDict = None,
+                            options: aiowamp.WAMPDict = None) -> None:
+        ...
+
+    @abc.abstractmethod
+    async def send_result(self, *args: aiowamp.WAMPType,
+                          kwargs: aiowamp.WAMPDict = None,
+                          options: aiowamp.WAMPDict = None) -> None:
+        ...
+
+    @abc.abstractmethod
+    async def send_error(self, error: str, *args: aiowamp.WAMPType,
+                         kwargs: aiowamp.WAMPDict = None,
+                         details: aiowamp.WAMPDict = None) -> None:
+        ...
+
+
 InvocationHandlerResult = Union[Tuple[aiowamp.WAMPType, ...], InvocationResult, aiowamp.WAMPType]
-# TODO call with custom invocation type which provides the custom send_progress
-#  methods
-InvocationHandler = Callable[[aiowamp.msg.Invocation],
+InvocationHandler = Callable[[InvocationABC],
                              Union[MaybeAwaitable[InvocationHandlerResult], AsyncIterator[InvocationHandlerResult]]]
 
 

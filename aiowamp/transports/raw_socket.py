@@ -94,14 +94,14 @@ class RawSocketTransport(aiowamp.TransportABC):
 
         data = self.serializer.serialize(msg)
         if len(data) > self.__send_limit:
-            # TODO raise
-            raise Exception
+            raise aiowamp.TransportError("message longer than remote is willing to receive")
 
         header = b"\x00" + int_to_bytes(len(data))
 
         if log.isEnabledFor(logging.DEBUG):
             log.debug("%s: writing header: %s", self, header.hex())
-            log.debug("%s: writing data: %s", self, data.hex())
+            import binascii
+            log.debug("%s: writing data: %s", self, binascii.b2a_base64(data))
 
         self.writer.write(header)
         self.writer.write(data)
