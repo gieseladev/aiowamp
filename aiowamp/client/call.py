@@ -123,7 +123,7 @@ class Call(CallABC):
 
             raise
 
-        # TODO raise proper exception
+        # TODO raise specific RPCError exception types depending on the error URI
         check_message_response(msg, aiowamp.msg.Result)
 
         return msg

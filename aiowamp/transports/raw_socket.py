@@ -118,8 +118,7 @@ class RawSocketTransport(aiowamp.TransportABC):
         length = bytes_to_int(header[1:])
         if length > self.__recv_limit:
             await self.close()
-            # TODO raise
-            raise Exception
+            raise aiowamp.TransportError("received message bigger than receive limit")
 
         t_type = header[0]
         # regular WAMP message

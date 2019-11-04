@@ -18,8 +18,6 @@ class _StubMessage(aiowamp.MessageABC):
         ...
 
 
-# TODO a lot of these could use properties accessing common keys in details.
-
 class Hello(_StubMessage):
     realm: aiowamp.URI
     details: aiowamp.WAMPDict
