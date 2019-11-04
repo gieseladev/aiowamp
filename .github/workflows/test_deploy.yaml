@@ -12,6 +12,7 @@ jobs:
       matrix:
         python-version:
           - "3.7"
+          - "3.8"
           - "3.x"
     steps:
       - uses: actions/checkout@v1
@@ -30,6 +31,7 @@ jobs:
         run: pipenv run tests
 
   deploy:
+    # only deploy on release
     if: github.event_name == 'release'
     name: Deploy
     needs: test
