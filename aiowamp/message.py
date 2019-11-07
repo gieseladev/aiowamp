@@ -24,14 +24,11 @@ T = TypeVar("T")
 
 
 class MessageABC(abc.ABC):
-    """Base class for WAMP messages.
-
-    Attributes:
-        message_type (int): Message type of the message.
-    """
+    """Base class for WAMP messages."""
     __slots__ = ()
 
     message_type: ClassVar[int]
+    """Type code of the message."""
 
     def __str__(self) -> str:
         return f"{self.message_type} {type(self).__qualname__}"
@@ -59,23 +56,28 @@ class MessageABC(abc.ABC):
         ...
 
 
-MsgT = TypeVar("MsgT", bound=MessageABC)
-
-
 def is_message_type(msg: MessageABC, msg_type: Type[MessageABC]) -> bool:
     """Checks whether msg is of type msg_type.
 
-    This functions uses the message type to compare the types.
     This should be preferred over `isinstance` checks as it supports duck typing.
+    If, however, the built-in message class is overwritten with a custom one
+    and you depend on a specific feature of said class then `isinstance` should
+    be used.
 
     Args:
         msg: Message to check.
         msg_type: Message type to check against.
+            IMPORTANT: The function doesn't actually cast to the type, it is
+            assumed that if two message types share the same type code, they
+            are interchangeable.
 
     Returns:
         Whether msg and msg_type have the same `aiowamp.MessageABC.message_type`.
     """
     return msg.message_type == msg_type.message_type
+
+
+MsgT = TypeVar("MsgT", bound=MessageABC)
 
 
 def message_as_type(msg: MessageABC, msg_type: Type[MsgT]) -> Optional[MsgT]:

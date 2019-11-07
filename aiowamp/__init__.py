@@ -8,7 +8,7 @@ from .transport import *
 from .uri import *
 
 # second import step
-from . import msg, transports
+from . import msg, transports, uri
 from .client import *
 
 __version__ = "0.0.1"

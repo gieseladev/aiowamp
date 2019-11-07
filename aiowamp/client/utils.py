@@ -1,17 +1,23 @@
 from __future__ import annotations
 
+import asyncio
 import inspect
+import logging
 from typing import Callable, Type, TypeVar
 
 import aiowamp
 
-__all__ = ["check_message_response", "call_async_fn"]
+__all__ = ["check_message_response", "call_async_fn", "call_async_fn_background"]
+
+log = logging.getLogger(__name__)
+
+MsgT = TypeVar("MsgT", bound=aiowamp.MessageABC)
 
 
-def check_message_response(msg: aiowamp.MessageABC, ok_type: Type[aiowamp.MessageABC]) -> None:
+def check_message_response(msg: aiowamp.MessageABC, ok_type: Type[MsgT]) -> MsgT:
     ok = aiowamp.message_as_type(msg, ok_type)
     if ok:
-        return
+        return ok
 
     error = aiowamp.message_as_type(msg, aiowamp.msg.Error)
     if error:
@@ -39,3 +45,14 @@ async def call_async_fn(f: Callable[..., aiowamp.MaybeAwaitable[T]], *args, **kw
         res = await res
 
     return res
+
+
+def call_async_fn_background(f: Callable[..., aiowamp.MaybeAwaitable[T]], msg: str, *args, **kwargs) -> None:
+    async def wrapper():
+        try:
+            await call_async_fn(f, *args, **kwargs)
+        except Exception:
+            log.exception(msg)
+
+    loop = asyncio.get_event_loop()
+    loop.create_task(wrapper())

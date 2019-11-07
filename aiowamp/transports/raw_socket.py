@@ -17,16 +17,6 @@ MAGIC_OCTET = b"\x7F"
 class RawSocketTransport(aiowamp.TransportABC):
     """WAMP transport over raw sockets.
 
-    Args:
-        reader: Reader to read from.
-        writer: Writer to write to.
-        serializer: Serializer to use.
-        recv_limit: Max amount of bytes willing to receive.
-        send_limit: Max amount of bytes remote is willing to receive.
-
-    See Also:
-        The `connect_raw_socket` method for opening a connection.
-
     Notes:
         The `start` method needs to be called before `recv` can read any messages.
         This is done as part of the `perform_client_handshake` procedure.
@@ -57,6 +47,17 @@ class RawSocketTransport(aiowamp.TransportABC):
                  serializer: aiowamp.SerializerABC, *,
                  recv_limit: int,
                  send_limit: int) -> None:
+        """
+        Args:
+            reader: Reader to read from.
+            writer: Writer to write to.
+            serializer: Serializer to use.
+            recv_limit: Max amount of bytes willing to receive.
+            send_limit: Max amount of bytes remote is willing to receive.
+
+        See Also:
+            The `connect_raw_socket` method for opening a connection.
+        """
         self.reader = reader
         self.writer = writer
         self.serializer = serializer

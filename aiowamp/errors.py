@@ -9,7 +9,8 @@ __all__ = ["Error",
            "TransportError",
            "InvalidMessage", "UnexpectedMessageError",
            "ErrorResponse", "RPCError",
-           "ClientClosed"]
+           "ClientClosed",
+           "Interrupt"]
 
 
 class Error(Exception):
@@ -67,3 +68,19 @@ class RPCError(ErrorResponse):
 
 class ClientClosed(Error):
     __slots__ = ()
+
+
+class Interrupt(Error):
+    __slots__ = ("options",)
+
+    options: aiowamp.WAMPDict
+
+    def __init__(self, options: aiowamp.WAMPDict) -> None:
+        self.options = options
+
+    def __repr__(self) -> str:
+        return f"{type(self).__qualname__}(options={self.options!r})"
+
+    @property
+    def cancel_mode(self) -> aiowamp.CancelMode:
+        return self.options["mode"]

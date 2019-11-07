@@ -10,14 +10,7 @@ __all__ = ["WebSocketTransport", "connect_web_socket"]
 
 
 class WebSocketTransport(aiowamp.TransportABC):
-    """WAMP Transport over web socket.
-
-    Args:
-        ws_client: Connected web socket client to use.
-        serializer: Serializer to use.
-        payload_text: Whether the serialised messages should be sent in a text
-            frame. If `False`, binary frames are used.
-    """
+    """WAMP Transport over web socket.    """
     __slots__ = ("ws_client", "serializer",
                  "__payload_opcode")
 
@@ -31,6 +24,13 @@ class WebSocketTransport(aiowamp.TransportABC):
 
     def __init__(self, ws_client: websockets.WebSocketClientProtocol, serializer: aiowamp.SerializerABC, *,
                  payload_text: bool) -> None:
+        """
+        Args:
+            ws_client: Connected web socket client to use.
+            serializer: Serializer to use.
+            payload_text: Whether the serialised messages should be sent in a text
+                frame. If `False`, binary frames are used.
+        """
         self.ws_client = ws_client
         self.serializer = serializer
 

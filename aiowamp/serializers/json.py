@@ -8,15 +8,7 @@ __all__ = ["JSONSerializer", "JSONDecoder", "JSONEncoder"]
 
 
 class JSONSerializer(aiowamp.SerializerABC):
-    """Serializer for the JSON format.
-
-    Args:
-        decoder: Decoder to be used. Defaults to `JSONDecoder` which supports
-            binary data in strings.
-
-        encoder: Encoder to be used. Defaults to `JSONEncoder` which supports
-            binary data in strings.
-    """
+    """Serializer for the JSON format."""
     __slots__ = ("decoder", "encoder")
 
     decoder: json.JSONDecoder
@@ -28,6 +20,14 @@ class JSONSerializer(aiowamp.SerializerABC):
     def __init__(self, *,
                  decoder: json.JSONDecoder = None,
                  encoder: json.JSONEncoder = None) -> None:
+        """
+        Args:
+            decoder: Decoder to be used. Defaults to `JSONDecoder` which supports
+                binary data in strings.
+
+            encoder: Encoder to be used. Defaults to `JSONEncoder` which supports
+                binary data in strings.
+        """
         self.decoder = decoder or JSONDecoder()
         self.encoder = encoder or JSONEncoder(check_circular=False)
 
