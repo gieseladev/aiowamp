@@ -322,8 +322,9 @@ class ClientABC(abc.ABC):
     @abc.abstractmethod
     def call(self, procedure: str, *args: aiowamp.WAMPType,
              kwargs: aiowamp.WAMPDict = None,
-             cancel_mode: aiowamp.CancelMode = None,
+             receive_progress: bool = None,
              call_timeout: float = None,
+             cancel_mode: aiowamp.CancelMode = None,
              disclose_me: bool = None,
              options: aiowamp.WAMPDict = None) -> aiowamp.CallABC:
         ...

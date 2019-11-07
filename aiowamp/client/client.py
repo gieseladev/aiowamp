@@ -69,6 +69,7 @@ class Client(ClientABC):
             log.exception("%s: couldn't start procedure %s", self, runner_factory)
             return
 
+        # TODO runners aren't removed after they're finished
         self.__running_procedures[invocation.request_id] = runner
 
     async def __handle_interrupt(self, interrupt_msg: aiowamp.msg.Interrupt) -> None:
@@ -139,7 +140,7 @@ class Client(ClientABC):
 
     @contextlib.asynccontextmanager
     async def _expecting_response(self, req_id: int) -> AsyncIterator[Awaitable[aiowamp.MessageABC]]:
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         fut = loop.create_future()
         self.__awaiting_reply[req_id] = fut
 
@@ -160,6 +161,7 @@ class Client(ClientABC):
         for procedure in self.__running_procedures.values():
             # TODO kill procedure
             pass
+        self.__running_procedures.clear()
 
         self.__sub_handlers.clear()
         self.__sub_ids.clear()
@@ -203,14 +205,17 @@ class Client(ClientABC):
         registered = check_message_response(await resp, aiowamp.msg.Registered)
 
         self.__procedures[registered.registration_id] = runner
-        raise NotImplementedError("WIP")
 
     def call(self, procedure: str, *args: aiowamp.WAMPType,
              kwargs: aiowamp.WAMPDict = None,
-             cancel_mode: aiowamp.CancelMode = None,
+             receive_progress: bool = None,
              call_timeout: float = None,
+             cancel_mode: aiowamp.CancelMode = None,
              disclose_me: bool = None,
              options: aiowamp.WAMPDict = None) -> aiowamp.CallABC:
+        if receive_progress is not None:
+            options = _set_value(options, "receive_progress", receive_progress)
+
         if call_timeout is not None:
             options = _set_value(options, "timeout", round(1000 * call_timeout))
 

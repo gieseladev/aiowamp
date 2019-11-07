@@ -154,16 +154,12 @@ class Session(SessionABC):
         if self.__receive_loop_running():
             raise RuntimeError("receive loop already running.")
 
-        loop = asyncio.get_event_loop()
-        if not loop.is_running():
-            raise RuntimeError("event loop isn't running. Cannot start receive loop.")
-
         self.__message_handler = aiobservable.Observable()
-        self.__receive_task = loop.create_task(self.__receive_loop())
+        self.__receive_task = asyncio.create_task(self.__receive_loop())
 
     def __get_goodbye_fut(self) -> asyncio.Future:
         if not self.__goodbye_fut:
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             self.__goodbye_fut = loop.create_future()
 
         return self.__goodbye_fut

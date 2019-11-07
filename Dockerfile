@@ -21,7 +21,7 @@ RUN python -m nuitka \
 
 RUN rm --recursive aiowamp aiowamp.build
 
-COPY tests/test.py test.py
+COPY examples/client/app.py app.py
 
 ENTRYPOINT ["bash"]
 CMD []

@@ -54,5 +54,4 @@ def call_async_fn_background(f: Callable[..., aiowamp.MaybeAwaitable[T]], msg: s
         except Exception:
             log.exception(msg)
 
-    loop = asyncio.get_event_loop()
-    loop.create_task(wrapper())
+    asyncio.create_task(wrapper())

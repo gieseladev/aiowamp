@@ -47,21 +47,22 @@ MSGS = (
 
 OPTIONAL_ATTR_TEMPLATE = """
 if {bound_attr}:
-    msg_list.append({bound_attr})
+    msg_list.insert({index}, {bound_attr})
     include = True
 elif include:
-    msg_list.append({empty_value_factory})
+    msg_list.insert({index}, {empty_value_factory})
 """
 
 
 # TODO convert string to URI when required
 
 
-def _gen_optional_attr_code(attrs: Reversible[Tuple[str, str]]) -> str:
+def _gen_optional_attr_code(attrs: Reversible[Tuple[str, str]], end_index: int) -> str:
     attr_parts: List[str] = []
 
     for (attr, factory) in reversed(attrs):
         attr_parts.append(OPTIONAL_ATTR_TEMPLATE.format(
+            index=end_index,
             bound_attr=f"self.{attr}",
             empty_value_factory=factory,
         ))
@@ -104,7 +105,7 @@ def _create_msg_cls(name: str, message_type: int,
     if optional_attrs:
         to_message_list_code = textwrap.indent(
             (f"msg_list = [{bound_attrs_str}]\n" +
-             _gen_optional_attr_code(optional_attrs) +
+             _gen_optional_attr_code(optional_attrs, len(attrs) + 1) +
              "return msg_list"),
             indent,
         )

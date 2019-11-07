@@ -140,3 +140,25 @@ async def test_coro_runner_interrupt_handle():
     await runner
 
     check_invocation(invocation, (), "hello world")
+
+
+async def test_awaitable_runner():
+    def a():
+        return asyncio.sleep(0, "hello world")
+
+    invocation = mock.make_dummy_invocation()
+    await AwaitableRunner(invocation, a())
+
+    check_invocation(invocation, (), "hello world")
+
+
+async def test_awaitable_runner_interrupt():
+    def a():
+        return asyncio.create_task(asyncio.sleep(3600, "hello world"))
+
+    invocation = mock.make_dummy_invocation()
+    runner = AwaitableRunner(invocation, a())
+    await runner.interrupt(make_interrupt())
+    await runner
+
+    check_invocation(invocation, (), error=True)

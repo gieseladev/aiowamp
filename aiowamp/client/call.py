@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Optional, Union
+from typing import Optional, Type, Union
 
 import aiowamp
 from .abstract import CallABC
@@ -37,8 +37,7 @@ class Call(CallABC):
 
         self.__cancel_mode = cancel_mode
 
-        loop = asyncio.get_event_loop()
-        assert loop.is_running(), "loop isn't running"
+        loop = asyncio.get_running_loop()
 
         self.__result_fut = loop.create_future()
         self.__progress_queue = None
@@ -61,11 +60,12 @@ class Call(CallABC):
 
     def on_progress(self, handler: aiowamp.ProgressHandler) -> None:
         if self.done:
-            raise RuntimeError("progress handler must be set before starting the call. "
+            raise RuntimeError("call is already complete. Progress handler should be added first"
                                "(i.e. before awaiting)")
         if self.__progress_handler:
             raise RuntimeError("progress handler already set")
 
+        self.__ensure_receive_progress()
         self.__progress_handler = handler
 
     def kill(self, e: Exception) -> None:
@@ -76,6 +76,21 @@ class Call(CallABC):
         if self.__progress_queue is not None:
             self.__progress_queue.put_nowait(None)
 
+    def __ensure_receive_progress(self) -> None:
+        try:
+            receive_progress = self._call_msg.options["receive_progress"]
+        except KeyError:
+            if self._call_sent:
+                raise RuntimeError(
+                    "call already sent, please either specify receive_progress "
+                    "in the call, or add progress handlers before starting it") from None
+
+            self._call_msg.options["receive_progress"] = True
+            return
+
+        if not receive_progress:
+            raise RuntimeError("call is explicitly unwilling to receive progress")
+
     def __handle_progress(self, progress_msg: aiowamp.msg.Result) -> None:
         if self.__progress_handler is None and self.__progress_queue is None:
             # Probably best not to use a warning because one might want to ignore
@@ -83,8 +98,8 @@ class Call(CallABC):
             log.info("%s: received progress but has no handler", self)
             return
 
-        progress = aiowamp.InvocationProgress(*progress_msg.args, **progress_msg.kwargs)
-        progress.details = progress_msg.details
+        progress = _create_invocation_result(progress_msg.args, progress_msg.kwargs, progress_msg.details,
+                                             cls=aiowamp.InvocationProgress)
 
         if self.__progress_handler is not None:
             call_async_fn_background(self.__progress_handler,
@@ -143,12 +158,11 @@ class Call(CallABC):
 
         # TODO raise specific RPCError exception types depending on the error URI
         result_msg = check_message_response(msg, aiowamp.msg.Result)
-
-        result = aiowamp.InvocationResult(*result_msg.args, **result_msg.kwargs)
-        result.details = result_msg.details
-        return result
+        return _create_invocation_result(result_msg.args, result_msg.kwargs, result_msg.details)
 
     async def next_progress(self) -> Optional[aiowamp.InvocationProgress]:
+        self.__ensure_receive_progress()
+
         if not self._call_sent:
             await self.__send_call()
 
@@ -182,3 +196,13 @@ class Call(CallABC):
             await self.__next_final()
         except Exception:
             pass
+
+
+def _create_invocation_result(args: Optional[aiowamp.WAMPList], kwargs: Optional[aiowamp.WAMPDict],
+                              details: aiowamp.WAMPDict, *,
+                              cls: Type[aiowamp.InvocationResult] = None) -> aiowamp.InvocationResult:
+    cls = cls or aiowamp.InvocationResult
+    instance = cls(*(args or ()), **(kwargs or {}))
+    instance.details = details
+
+    return instance

@@ -177,7 +177,7 @@ class ProcedureRunnerABC(Awaitable[None], abc.ABC):
     def __init__(self, invocation: aiowamp.InvocationABC) -> None:
         self.invocation = invocation
 
-        self._loop = asyncio.get_event_loop()
+        self._loop = asyncio.get_running_loop()
         self.__task = self._loop.create_task(self._run())
 
     def __str__(self) -> str:
@@ -397,7 +397,7 @@ class AwaitableRunner(ProcedureRunnerABC):
     async def _run(self) -> None:
         try:
             result = await self._awaitable
-        except Exception as e:
+        except (asyncio.CancelledError, Exception) as e:
             await self._send_exception(e)
         else:
             await self._send_result(result)
@@ -414,6 +414,7 @@ RunnerFactory = Callable[[InvocationABC], ProcedureRunnerABC]
 
 def make_lazy_factory(handler: aiowamp.InvocationHandler) -> RunnerFactory:
     def factory(invocation: InvocationABC):
+        # TODO catch exceptions
         res = handler(invocation)
 
         if inspect.iscoroutine(res):
@@ -424,6 +425,8 @@ def make_lazy_factory(handler: aiowamp.InvocationHandler) -> RunnerFactory:
 
         if inspect.isawaitable(res):
             return AwaitableRunner(invocation, res)
+
+        # TODO treat as result
 
         raise TypeError(f"invocation handler {handler!r} returned unsupported type: {type(res).__qualname__}")
 

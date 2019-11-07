@@ -78,12 +78,8 @@ class RawSocketTransport(aiowamp.TransportABC):
         if self.__read_task and not self.__read_task.done():
             raise RuntimeError("read loop already running!")
 
-        loop = asyncio.get_event_loop()
-        if not loop.is_running():
-            raise RuntimeError("cannot start read loop. Event loop isn't running")
-
         self._msg_queue = asyncio.Queue()
-        self.__read_task = loop.create_task(self.__read_loop())
+        self.__read_task = asyncio.create_task(self.__read_loop())
 
     async def close(self) -> None:
         log.debug("%s: closing", self)
@@ -322,7 +318,7 @@ async def _connect(url: Union[str, urlparse.ParseResult], serializer: aiowamp.Se
 
     reader = asyncio.StreamReader()
 
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     transport, protocol = await loop.create_connection(
         lambda: asyncio.StreamReaderProtocol(reader),
         host=url.hostname,
