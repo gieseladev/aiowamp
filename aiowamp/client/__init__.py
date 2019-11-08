@@ -1,4 +1,5 @@
 from .abstract import *
+from .bwlist import BlackWhiteList
 from .call import Call
 from .client import Client
 from .connect import connect, join_realm

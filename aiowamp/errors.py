@@ -19,19 +19,25 @@ class Error(Exception):
 
 
 class TransportError(Error):
+    """Transport level error."""
     __slots__ = ()
 
 
 class InvalidMessage(Error):
+    """Exception for invalid messages."""
     __slots__ = ()
 
 
 @dataclasses.dataclass()
 class UnexpectedMessageError(InvalidMessage):
+    """Exception raised when an unexpected message type is received."""
     __slots__ = ("received", "expected")
 
     received: aiowamp.MessageABC
+    """Message that was received."""
+
     expected: Type[aiowamp.MessageABC]
+    """Message type that was expected."""
 
     def __str__(self) -> str:
         return f"received message {self.received!r} but expected message of type {self.expected.__qualname__}"
@@ -41,6 +47,7 @@ class ErrorResponse(Error):
     __slots__ = ("message",)
 
     message: aiowamp.msg.Error
+    """Error message."""
 
     def __init__(self, message: aiowamp.msg.Error):
         self.message = message
@@ -74,6 +81,7 @@ class Interrupt(Error):
     __slots__ = ("options",)
 
     options: aiowamp.WAMPDict
+    """Options sent with the interrupt."""
 
     def __init__(self, options: aiowamp.WAMPDict) -> None:
         self.options = options
@@ -83,4 +91,5 @@ class Interrupt(Error):
 
     @property
     def cancel_mode(self) -> aiowamp.CancelMode:
+        """Cancel mode sent with the interrupt."""
         return self.options["mode"]

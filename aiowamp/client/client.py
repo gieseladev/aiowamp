@@ -294,6 +294,7 @@ class Client(ClientABC):
     async def publish(self, topic: str, *args: aiowamp.WAMPType,
                       kwargs: aiowamp.WAMPDict = None,
                       acknowledge: bool = True,
+                      blackwhitelist: aiowamp.BlackWhiteList = None,
                       exclude_me: bool = None,
                       disclose_me: bool = None,
                       options: aiowamp.WAMPDict = None) -> None:
@@ -305,6 +306,9 @@ class Client(ClientABC):
 
         if disclose_me is not None:
             options = _set_value(options, "disclose_me", disclose_me)
+
+        if blackwhitelist:
+            options = blackwhitelist.to_options(options)
 
         req_id = next(self.id_gen)
         send_coro = self.session.send(aiowamp.msg.Publish(

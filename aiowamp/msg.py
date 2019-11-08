@@ -147,5 +147,12 @@ def _create_msgs():
 
 _create_msgs()
 
-del MSGS, OPTIONAL_ATTR_TEMPLATE, MSG_TEMPLATE
-del _gen_optional_attr_code, _create_msg_cls, _create_msgs
+# clean the globals
+
+# because key is defined here, it will be deleted by the code below
+key = None
+for key in tuple(globals()):
+    if key == "__all__" or key in __all__:
+        continue
+
+    del globals()[key]
