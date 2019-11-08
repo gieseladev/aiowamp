@@ -1,5 +1,5 @@
 import itertools
-from typing import Any, Iterable, Literal, Type, Union
+from typing import Any, Iterable, Type, Union
 
 import aiowamp
 from aiowamp.client.invocation import get_return_values
@@ -37,7 +37,7 @@ def check_error(a: Any, b: Any) -> None:
 def check_invocation(invocation: aiowamp.InvocationABC,
                      progress: Iterable[aiowamp.InvocationHandlerResult],
                      final: aiowamp.InvocationHandlerResult = None, *,
-                     error: Union[aiowamp.msg.Error, Literal[True]] = None) -> None:
+                     error: Union[aiowamp.msg.Error, bool] = None) -> None:
     sent_messages = mock.get_messages(invocation)
     print("\nSENT:", sent_messages)
     final_msg = sent_messages.pop()
