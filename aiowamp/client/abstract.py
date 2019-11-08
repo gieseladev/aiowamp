@@ -343,7 +343,7 @@ For example:
 
 As you can see, this procedure returns a single value (namely the sum of the 
 first three arguments passed to the call). aiowamp interprets this as the first 
-argument of the result. Different return values result in different 
+argument of the result. Different return values have different 
 interpretations, but they should all work like you would expect them to. 
 For more, please take a look at `aiowamp.InvocationHandlerResult`.
 
