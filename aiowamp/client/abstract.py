@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import abc
-from typing import Any, AsyncGenerator, AsyncIterator, Awaitable, Callable, Iterator, Optional, Tuple, TypeVar, Union, \
-    overload
+from typing import Any, AsyncGenerator, AsyncIterator, Awaitable, Callable, Iterator, Mapping, Optional, Sequence, \
+    Tuple, TypeVar, Union, overload
 
 import aiowamp
 
@@ -21,11 +21,15 @@ MaybeAwaitable = Union[T, Awaitable[T]]
 
 
 class ArgsMixin:
-    """Helper class which provides useful methods for types with args and kwargs."""
+    """Helper class which provides useful methods for types with args and kwargs.
+
+    The args and kwargs attributes ARE NOT part of this class, they are expected
+    to exist.
+    """
     __slots__ = ()
 
-    args: Tuple[aiowamp.WAMPType, ...]
-    kwargs: aiowamp.WAMPDict
+    args: Sequence[aiowamp.WAMPType]
+    kwargs: Mapping[str, aiowamp.WAMPType]
 
     def __repr__(self) -> str:
         arg_str = ", ".join(map(repr, self.args))
@@ -64,7 +68,7 @@ class ArgsMixin:
         """Get the value assigned to the given key.
 
         If the key is a string it is looked-up in the keyword arguments.
-        If it's an integer it is treated as an index for the arugments.
+        If it's an integer it is treated as an index for the arguments.
 
         Args:
             key: Index or keyword to get value for.
@@ -151,6 +155,7 @@ class InvocationABC(ArgsMixin, abc.ABC):
 
     @property
     def may_send_progress(self) -> bool:
+        """Whether or not the caller is willing to receive progressive results."""
         try:
             return bool(self.details["receive_progress"])
         except KeyError:
@@ -158,10 +163,26 @@ class InvocationABC(ArgsMixin, abc.ABC):
 
     @property
     def caller_id(self) -> Optional[int]:
+        """Get the caller's id.
+
+        You can specify the "disclose_caller" option when registering a
+        procedure to force disclosure.
+
+        Returns:
+            WAMP id of the caller, or `None` if not specified.
+        """
         return self.details.get("caller")
 
     @property
     def trust_level(self) -> Optional[int]:
+        """Get the router assigned trust level.
+
+        The trust level 0 means lowest trust, and higher integers represent
+        (application-defined) higher levels of trust.
+
+        Returns:
+            The trust level, or `None` if not specified.
+        """
         return self.details.get("trustlevel")
 
     @property
@@ -198,6 +219,13 @@ class InvocationABC(ArgsMixin, abc.ABC):
 
 
 ProgressHandler = Callable[[InvocationProgress], MaybeAwaitable[Any]]
+"""Type of a progress handler function.
+
+The function is called with the invocation progress instance.
+If a progress handler returns an awaitable object, it is awaited.
+
+The return value is ignored.
+"""
 
 
 class CallABC(Awaitable[InvocationResult], AsyncIterator[InvocationProgress], abc.ABC):
@@ -296,11 +324,81 @@ explicitly!
 InvocationHandler = Callable[[InvocationABC],
                              Union[MaybeAwaitable[InvocationHandlerResult],
                                    AsyncGenerator[InvocationHandlerResult, None]]]
+"""Type of a procedure function.
+
+Upon invocation, a procedure function will be called with an 
+`aiowamp.InvocationABC` instance. This invocation can be used to get arguments 
+and send results.
+
+It's also possible to send results by returning them. As a rule of thumb, 
+write the procedures the same as how you would write them without WAMP.
+
+For example:
+
+    async def my_procedure(invocation):
+        # invocation objects implement a lot of utility methods. 
+        a, b, c = invocation
+        return sum(a, b, c)
+
+
+As you can see, this procedure returns a single value (namely the sum of the 
+first three arguments passed to the call). aiowamp interprets this as the first 
+argument of the result. Different return values result in different 
+interpretations, but they should all work like you would expect them to. 
+For more, please take a look at `aiowamp.InvocationHandlerResult`.
+
+
+aiowamp also supports async generators, which can be used to send progress 
+results:
+
+    async def prog_results(invocation):
+        final_n = invocation.get(0, 100)
+        for i in range(final_n):
+            yield i
+        
+        yield final_n
+
+This rather useless procedure sends all numbers between 0 and the first 
+argument, which defaults to 100 if not specified, as progress results.
+The final iteration is then sent as the final result.
+
+The above code has been written to make this point clear, but it would've worked
+the same if we used `range(final_n + 1)` and removed the `yield final_n`.
+
+IMPORTANT:
+aiowamp doesn't know whether the async generator has yielded for the last time, 
+as such, **all results wait for the next yield before being sent**. The first 
+progress will be sent when the second yield statement is reached, the final 
+result is sent when the async generator stops.
+If this is an issue, **there are ways to get around it:**
+
+An instance of `aiowamp.InvocationProgress` can be yielded which will cause the
+progress to be sent immediately.
+The WAMP protocol doesn't support progressive calls without a final result, if
+the last yield of a procedure function is an instance of 
+`aiowamp.InvocationProgress`, then an empty final result will be sent and a 
+warning is issued.
+
+Similarly, the semantics of `aiowamp.InvocationResult` are different in an 
+async generator. When yielding an instance of `aiowamp.InvocationResult` it 
+will be sent as the final result immediately.
+This can be used to perform some actions after the result has been sent.
+"""
 
 SubscriptionHandler = Callable[[aiowamp.msg.Event], MaybeAwaitable[Any]]
+"""Type of a subscription handler function.
+
+The handler receives the `aiowamp.msg.Event` each time it is published.
+When the handler returns an awaitable object, it is awaited.
+The return value is ignored.
+"""
 
 
 class ClientABC(abc.ABC):
+    """WAMP Client.
+
+    Implements the publisher, subscriber, caller, and callee roles.
+    """
     __slots__ = ()
 
     def __str__(self) -> str:
@@ -308,7 +406,14 @@ class ClientABC(abc.ABC):
 
     @abc.abstractmethod
     async def close(self, details: aiowamp.WAMPDict = None, *,
-                    uri: str = None) -> None:
+                    reason: str = None) -> None:
+        """Close the client and the underlying session.
+
+        Args:
+            details: Additional details to send with the close message.
+            reason: URI denoting the reason for closing.
+                Defaults to `aiowamp.uri.CLOSE_NORMAL`.
+        """
         ...
 
     @abc.abstractmethod
@@ -317,6 +422,10 @@ class ClientABC(abc.ABC):
                        match_policy: aiowamp.MatchPolicy = None,
                        invocation_policy: aiowamp.InvocationPolicy = None,
                        options: aiowamp.WAMPDict = None) -> None:
+        ...
+
+    @abc.abstractmethod
+    async def unregister(self, procedure: str) -> None:
         ...
 
     @abc.abstractmethod
@@ -337,6 +446,14 @@ class ClientABC(abc.ABC):
 
     @abc.abstractmethod
     async def unsubscribe(self, topic: str) -> None:
+        """Unsubscribe from the given topic.
+
+        Args:
+            topic: Topic URI to unsubscribe from.
+
+        Raises:
+            KeyError: If not subscribed to the topic.
+        """
         ...
 
     @abc.abstractmethod

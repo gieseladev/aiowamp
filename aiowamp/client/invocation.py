@@ -34,6 +34,16 @@ class Invocation(InvocationABC):
     __details: aiowamp.WAMPDict
 
     def __init__(self, session: aiowamp.SessionABC, msg: aiowamp.msg.Invocation) -> None:
+        """Create a new invocation instance.
+
+        Normally you should not create it yourself, it doesn't actively listen
+        for incoming messages. Instead, it relies on the `aiowamp.ClientABC` to
+        receive and pass them.
+
+        Args:
+            session: WAMP Session to send messages in.
+            msg: Invocation message that spawned the invocation.
+        """
         self.session = session
         self.__done = False
         self.__interrupt = None
@@ -164,17 +174,27 @@ def get_return_values(result: aiowamp.InvocationHandlerResult) \
 
 
 class ProcedureRunnerABC(Awaitable[None], abc.ABC):
+    """Wrapper for procedure code handling results, exceptions, and interrupts.
+
+    Creating an instance of a procedure runner is akin to starting it.
+    To wait for a runner to finish it can be awaited.
+    """
     __slots__ = ("invocation",
                  "_loop",
                  "__task")
 
     invocation: aiowamp.InvocationABC
+    """Current invocation."""
 
     _loop: asyncio.AbstractEventLoop
 
     __task: asyncio.Task
 
     def __init__(self, invocation: aiowamp.InvocationABC) -> None:
+        """
+        Args:
+            invocation: Invocation
+        """
         self.invocation = invocation
 
         self._loop = asyncio.get_running_loop()
@@ -197,16 +217,36 @@ class ProcedureRunnerABC(Awaitable[None], abc.ABC):
         await self.invocation._receive_interrupt(exc)
 
     async def _send_exception(self, e: Exception) -> None:
+        """Send an exception if the invocation isn't done already.
+
+        The exception is converted to a WAMP error.
+
+        Args:
+            e: Exception to send.
+        """
         if self.invocation.done:
             log.debug("%s: already done, not sending error: %r", self, e)
             return
 
+        # TODO convert exception to error
         log.debug("%s: sending error: %r", self, e)
         await self.invocation.send_error(aiowamp.uri.INVALID_ARGUMENT)
 
     async def _send_progress(self, result: aiowamp.InvocationHandlerResult) -> None:
+        """Send a progress message if the invocation isn't already done.
+
+        If the caller isn't willing to receive progress results, the result is
+        ignored.
+
+        Args:
+            result: Handler result to send.
+        """
         if self.invocation.done:
             log.debug("%s: already done, not sending progress: %r", self, result)
+            return
+
+        if not self.invocation.may_send_progress:
+            log.debug("%s: caller is unwilling to receive progress, discarding: %r", self, result)
             return
 
         log.debug("%s: sending progress: %r", self, result)
@@ -214,6 +254,11 @@ class ProcedureRunnerABC(Awaitable[None], abc.ABC):
         await self.invocation.send_progress(*args, kwargs=kwargs)
 
     async def _send_result(self, result: aiowamp.InvocationHandlerResult) -> None:
+        """Send a result if the invocation isn't already done.
+
+        Args:
+            result: Handler result to send.
+        """
         if self.invocation.done:
             log.debug("%s: already done, not sending result: %r", self, result)
             return
@@ -414,7 +459,7 @@ RunnerFactory = Callable[[InvocationABC], ProcedureRunnerABC]
 
 def make_lazy_factory(handler: aiowamp.InvocationHandler) -> RunnerFactory:
     def factory(invocation: InvocationABC):
-        # TODO catch exceptions
+        # TODO should this really bubble to the client level?
         res = handler(invocation)
 
         if inspect.iscoroutine(res):
@@ -426,7 +471,8 @@ def make_lazy_factory(handler: aiowamp.InvocationHandler) -> RunnerFactory:
         if inspect.isawaitable(res):
             return AwaitableRunner(invocation, res)
 
-        # TODO treat as result
+        # TODO treat as result, maybe simply return this and let the client
+        #  handle it
 
         raise TypeError(f"invocation handler {handler!r} returned unsupported type: {type(res).__qualname__}")
 

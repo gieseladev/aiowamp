@@ -69,8 +69,12 @@ class Client(ClientABC):
             log.exception("%s: couldn't start procedure %s", self, runner_factory)
             return
 
-        # TODO runners aren't removed after they're finished
         self.__running_procedures[invocation.request_id] = runner
+        try:
+            await runner
+        finally:
+            log.debug("%s: invocation %s is done", self, invocation)
+            del self.__running_procedures[invocation.request_id]
 
     async def __handle_interrupt(self, interrupt_msg: aiowamp.msg.Interrupt) -> None:
         try:
@@ -117,8 +121,7 @@ class Client(ClientABC):
                 # response to an ongoing call
 
                 if call.handle_response(msg):
-                    if log.isEnabledFor(logging.DEBUG):
-                        log.debug("%s: %s done", self, call)
+                    log.debug("%s: %s done", self, call)
 
                     del self.__ongoing_calls[request_id]
 
@@ -175,9 +178,9 @@ class Client(ClientABC):
         self.__awaiting_reply.clear()
 
     async def close(self, details: aiowamp.WAMPDict = None, *,
-                    uri: str = None) -> None:
+                    reason: str = None) -> None:
         try:
-            await self.session.close(details, uri=uri)
+            await self.session.close(details, reason=reason)
         finally:
             self._cleanup()
 

@@ -59,7 +59,7 @@ class SessionABC(abc.ABC):
 
     @abc.abstractmethod
     async def close(self, details: aiowamp.WAMPDict = None, *,
-                    uri: aiowamp.URI = None) -> None:
+                    reason: aiowamp.URI = None) -> None:
         ...
 
     @abc.abstractmethod
@@ -197,7 +197,7 @@ class Session(SessionABC):
         await self.transport.send(msg)
 
     async def close(self, details: aiowamp.WAMPDict = None, *,
-                    uri: aiowamp.URI = None) -> None:
+                    reason: aiowamp.URI = None) -> None:
         if not self.__receive_loop_running():
             self.start()
 
@@ -205,7 +205,7 @@ class Session(SessionABC):
 
         await self.send(aiowamp.msg.Goodbye(
             details or {},
-            uri or aiowamp.uri.CLOSE_NORMAL,
+            reason or aiowamp.uri.CLOSE_NORMAL,
         ))
 
         await goodbye_fut
