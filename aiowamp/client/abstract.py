@@ -100,6 +100,7 @@ class InvocationResult(ArgsMixin):
     """Keyword arguments."""
 
     details: aiowamp.WAMPDict
+    """Details."""
 
     def __init__(self, *args: aiowamp.WAMPType, **kwargs: aiowamp.WAMPType) -> None:
         self.args = args

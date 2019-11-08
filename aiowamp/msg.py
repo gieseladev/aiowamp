@@ -152,7 +152,7 @@ _create_msgs()
 # because key is defined here, it will be deleted by the code below
 key = None
 for key in tuple(globals()):
-    if key == "__all__" or key in __all__:
+    if key.endswith("__") or key in __all__:
         continue
 
     del globals()[key]

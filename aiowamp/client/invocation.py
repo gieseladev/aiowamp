@@ -24,6 +24,8 @@ class Invocation(InvocationABC):
                  "__args", "__kwargs", "__details")
 
     session: aiowamp.SessionABC
+    """Session used to send messages."""
+
     __done: bool
     __interrupt: Optional[aiowamp.Interrupt]
 
@@ -38,8 +40,8 @@ class Invocation(InvocationABC):
                  procedure: aiowamp.URI) -> None:
         """Create a new invocation instance.
 
-        Normally you should not create it yourself, it doesn't actively listen
-        for incoming messages. Instead, it relies on the `aiowamp.ClientABC` to
+        Normally you should not create these yourself, they don't actively listen
+        for incoming messages. Instead, they rely on the `aiowamp.ClientABC` to
         receive and pass them.
 
         Args:

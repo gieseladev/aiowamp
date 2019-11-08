@@ -1,9 +1,14 @@
+from __future__ import annotations
+
 from typing import Tuple
 
 import aiowamp
 from .abstract import SubscriptionEventABC
 
 __all__ = ["SubscriptionEvent"]
+
+
+# TODO subscriptionevent and invocation should expose the underlying client.
 
 
 class SubscriptionEvent(SubscriptionEventABC):
@@ -22,6 +27,17 @@ class SubscriptionEvent(SubscriptionEventABC):
 
     def __init__(self, client: aiowamp.ClientABC, msg: aiowamp.msg.Event, *,
                  topic: aiowamp.URI) -> None:
+        """Create a new SubscriptionEven instance.
+
+        There shouldn't be a need to create these yourself, unless you're
+        creating your own `aiowamp.ClientABC`.
+        Unlike `aiowamp.Invocation` it doesn't require to be managed though.
+
+        Args:
+            client: Client used to unsubscribe.
+            msg: Event message.
+            topic: Registered topic URI.
+        """
         self.__client = client
 
         self.__topic = topic

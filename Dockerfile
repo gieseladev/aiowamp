@@ -23,6 +23,5 @@ RUN rm --recursive aiowamp aiowamp.build
 
 COPY examples/client/app.py app.py
 
-ENTRYPOINT ["bash"]
-CMD []
-#CMD ["python", "test.py"]
+# using shell form to have variable substitution
+ENTRYPOINT python app.py --realm ${WAMP_REALM} ${WAMP_URI}

@@ -59,7 +59,7 @@ def get_transport_from_client(c: aiowamp.ClientABC) -> DummyTransport:
     return get_transport_from_session(c.session)
 
 
-def make_dummy_invocation(msg: aiowamp.msg.Invocation = None, *,
+def make_dummy_invocation(msg: aiowamp.msg.Invocation = None, procedure: str = "test_procedure", *,
                           progress: bool = True,
                           details: aiowamp.WAMPDict = None,
                           args: aiowamp.WAMPList = None,
@@ -68,7 +68,8 @@ def make_dummy_invocation(msg: aiowamp.msg.Invocation = None, *,
                           session: aiowamp.SessionABC = None) -> aiowamp.Invocation:
     details = details or {"receive_progress": progress}
     msg = msg or aiowamp.msg.Invocation(0, 0, details, args, kwargs)
-    return aiowamp.Invocation(session or make_dummy_session(session_details), msg)
+    return aiowamp.Invocation(session or make_dummy_session(session_details), msg,
+                              procedure=aiowamp.URI(procedure))
 
 
 def get_transport_from_invocation(i: aiowamp.InvocationABC) -> DummyTransport:
