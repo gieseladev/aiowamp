@@ -17,18 +17,21 @@ log = logging.getLogger(__name__)
 
 class Client(ClientABC):
     __slots__ = ("session", "id_gen",
-                 "__procedures", "__running_procedures",
-                 "__ongoing_calls", "__awaiting_reply",
+                 "__awaiting_reply", "__ongoing_calls", "__running_procedures",
+                 "__procedure_ids", "__procedures",
                  "__sub_ids", "__sub_handlers")
 
     session: aiowamp.SessionABC
+    """Session the client is attached to."""
     id_gen: aiowamp.IDGeneratorABC
+    """ID generator used to generate the client ids."""
 
-    __procedures: Dict[int, RunnerFactory]
+    __awaiting_reply: Dict[int, asyncio.Future]
+    __ongoing_calls: Dict[int, aiowamp.Call]
     __running_procedures: Dict[int, ProcedureRunnerABC]
 
-    __ongoing_calls: Dict[int, aiowamp.Call]
-    __awaiting_reply: Dict[int, asyncio.Future]
+    __procedure_ids: Dict[aiowamp.URI, int]
+    __procedures: Dict[int, RunnerFactory]
 
     __sub_ids: Dict[aiowamp.URI, int]
     __sub_handlers: Dict[int, aiowamp.SubscriptionHandler]
@@ -37,11 +40,12 @@ class Client(ClientABC):
         self.session = session
         self.id_gen = aiowamp.IDGenerator()
 
-        self.__procedures = {}
+        self.__awaiting_reply = {}
+        self.__ongoing_calls = {}
         self.__running_procedures = {}
 
-        self.__ongoing_calls = {}
-        self.__awaiting_reply = {}
+        self.__procedure_ids = {}
+        self.__procedures = {}
 
         self.__sub_ids = {}
         self.__sub_handlers = {}
@@ -54,16 +58,19 @@ class Client(ClientABC):
     def __str__(self) -> str:
         return f"{type(self).__qualname__} {self.session.session_id}"
 
-    async def __handle_invocation(self, invocation: aiowamp.msg.Invocation) -> None:
+    async def __handle_invocation(self, invocation_msg: aiowamp.msg.Invocation) -> None:
+        reg_id = invocation_msg.registration_id
+        invocation = aiowamp.Invocation(self.session, invocation_msg, procedure="")
+
         try:
-            runner_factory = self.__procedures[invocation.registration_id]
+            runner_factory = self.__procedures[reg_id]
         except KeyError:
             # TODO send error response
             log.warning("%s: received invocation for unknown registration: %r", self, invocation)
             return
 
         try:
-            runner = runner_factory(aiowamp.Invocation(self.session, invocation))
+            runner = runner_factory(invocation)
         except Exception:
             # TODO send error response
             log.exception("%s: couldn't start procedure %s", self, runner_factory)
@@ -84,6 +91,10 @@ class Client(ClientABC):
             return
 
         await runner.interrupt(aiowamp.Interrupt(interrupt_msg.options))
+
+    async def __handle_event(self, event_msg: aiowamp.msg.Event, handler: aiowamp.SubscriptionHandler) -> None:
+        event = aiowamp.SubscriptionEvent(self, event_msg, topic="")
+        await call_async_fn(handler, event)
 
     async def __handle_message(self, msg: aiowamp.MessageABC) -> None:
         invocation = aiowamp.message_as_type(msg, aiowamp.msg.Invocation)
@@ -133,11 +144,11 @@ class Client(ClientABC):
         event = aiowamp.message_as_type(msg, aiowamp.msg.Event)
         if event:
             try:
-                callback = self.__sub_handlers[event.subscription_id]
+                handler = self.__sub_handlers[event.subscription_id]
             except KeyError:
                 log.warning(f"%s: received event for unknown subscription: %r", self, event)
             else:
-                await call_async_fn(callback, event)
+                await self.__handle_event(event, handler)
 
             return
 
@@ -160,7 +171,9 @@ class Client(ClientABC):
     def _cleanup(self) -> None:
         exc = aiowamp.ClientClosed()
 
+        self.__procedure_ids.clear()
         self.__procedures.clear()
+
         for procedure in self.__running_procedures.values():
             # TODO kill procedure
             pass
@@ -184,6 +197,17 @@ class Client(ClientABC):
         finally:
             self._cleanup()
 
+    def get_registration_id(self, procedure: str) -> Optional[int]:
+        """Get the id of the registration for the given procedure.
+
+        Args:
+            procedure: Procedure to get registration id for.
+
+        Returns:
+            Procedure id. `None`, if no registration for the procedure.
+        """
+        return self.__procedure_ids.get(aiowamp.URI(procedure))
+
     async def register(self, procedure: str, handler: aiowamp.InvocationHandler, *, disclose_caller: bool = None,
                        match_policy: aiowamp.MatchPolicy = None,
                        invocation_policy: aiowamp.InvocationPolicy = None,
@@ -197,17 +221,35 @@ class Client(ClientABC):
         if invocation_policy is not None:
             options = _set_value(options, "invoke", invocation_policy)
 
+        procedure_uri = aiowamp.URI(procedure)
         req_id = next(self.id_gen)
         async with self._expecting_response(req_id) as resp:
             await self.session.send(aiowamp.msg.Register(
                 req_id,
                 options or {},
-                aiowamp.URI(procedure),
+                procedure_uri,
             ))
 
         registered = check_message_response(await resp, aiowamp.msg.Registered)
 
-        self.__procedures[registered.registration_id] = runner
+        reg_id = registered.registration_id
+        self.__procedure_ids[procedure_uri] = reg_id
+        self.__procedures[reg_id] = runner
+
+    async def unregister(self, procedure: str) -> None:
+        try:
+            reg_id = self.__procedure_ids.pop(aiowamp.URI(procedure))
+        except KeyError:
+            raise KeyError(f"no procedure registered for {procedure!r}") from None
+
+        with contextlib.suppress(KeyError):
+            del self.__procedures[reg_id]
+
+        req_id = next(self.id_gen)
+        async with self._expecting_response(req_id) as resp:
+            await self.session.send(aiowamp.msg.Unregister(req_id, reg_id))
+
+        check_message_response(await resp, aiowamp.msg.Unregistered)
 
     def call(self, procedure: str, *args: aiowamp.WAMPType,
              kwargs: aiowamp.WAMPDict = None,
@@ -270,15 +312,17 @@ class Client(ClientABC):
             ))
 
         subscribed = check_message_response(await resp, aiowamp.msg.Subscribed)
-        self.__sub_ids[topic] = subscribed.subscription_id
-        self.__sub_handlers[subscribed.subscription_id] = callback
+
+        sub_id = subscribed.subscription_id
+        self.__sub_ids[topic] = sub_id
+        self.__sub_handlers[sub_id] = callback
 
     async def unsubscribe(self, topic: str) -> None:
         # delete the local subscription first. This might lead to the situation
         # where we still receive events but don't have a handler but that's at
         # least better than the alternative.
         try:
-            sub_id, _ = self.__sub_ids.pop(aiowamp.URI(topic))
+            sub_id = self.__sub_ids.pop(aiowamp.URI(topic))
         except KeyError:
             raise KeyError(f"not subscribed to {topic!r}") from None
 

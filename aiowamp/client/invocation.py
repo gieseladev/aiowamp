@@ -20,20 +20,22 @@ log = logging.getLogger(__name__)
 class Invocation(InvocationABC):
     __slots__ = ("session",
                  "__done", "__interrupt",
-                 "__request_id",
+                 "__procedure", "__request_id",
                  "__args", "__kwargs", "__details")
 
     session: aiowamp.SessionABC
     __done: bool
     __interrupt: Optional[aiowamp.Interrupt]
 
+    __procedure: aiowamp.URI
     __request_id: int
 
     __args: Tuple[aiowamp.WAMPType, ...]
     __kwargs: aiowamp.WAMPDict
     __details: aiowamp.WAMPDict
 
-    def __init__(self, session: aiowamp.SessionABC, msg: aiowamp.msg.Invocation) -> None:
+    def __init__(self, session: aiowamp.SessionABC, msg: aiowamp.msg.Invocation, *,
+                 procedure: aiowamp.URI) -> None:
         """Create a new invocation instance.
 
         Normally you should not create it yourself, it doesn't actively listen
@@ -43,11 +45,13 @@ class Invocation(InvocationABC):
         Args:
             session: WAMP Session to send messages in.
             msg: Invocation message that spawned the invocation.
+            procedure: Registered procedure URI.
         """
         self.session = session
         self.__done = False
         self.__interrupt = None
 
+        self.__procedure = procedure
         self.__request_id = msg.request_id
 
         self.__args = tuple(msg.args) if msg.args else ()
@@ -57,6 +61,10 @@ class Invocation(InvocationABC):
     @property
     def request_id(self) -> int:
         return self.__request_id
+
+    @property
+    def registered_procedure(self) -> aiowamp.URI:
+        return self.__procedure
 
     @property
     def args(self) -> Tuple[aiowamp.WAMPType, ...]:

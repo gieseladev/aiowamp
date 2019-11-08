@@ -7,11 +7,11 @@ from typing import Any, AsyncGenerator, AsyncIterator, Awaitable, Callable, Iter
 import aiowamp
 
 __all__ = ["MaybeAwaitable",
-           "InvocationResult", "InvocationProgress", "InvocationABC",
-           "ProgressHandler",
-           "CallABC",
+           "InvocationResult", "InvocationABC",
+           "InvocationProgress", "ProgressHandler",
            "InvocationHandlerResult", "InvocationHandler",
-           "SubscriptionHandler",
+           "CallABC",
+           "SubscriptionEventABC", "SubscriptionHandler",
            "ClientABC"]
 
 T = TypeVar("T")
@@ -127,6 +127,16 @@ class InvocationProgress(InvocationResult):
     __slots__ = ()
 
 
+ProgressHandler = Callable[[InvocationProgress], MaybeAwaitable[Any]]
+"""Type of a progress handler function.
+
+The function is called with the invocation progress instance.
+If a progress handler returns an awaitable object, it is awaited.
+
+The return value is ignored.
+"""
+
+
 class InvocationABC(ArgsMixin, abc.ABC):
     __slots__ = ()
 
@@ -137,6 +147,23 @@ class InvocationABC(ArgsMixin, abc.ABC):
     @abc.abstractmethod
     def request_id(self) -> int:
         ...
+
+    @property
+    @abc.abstractmethod
+    def registered_procedure(self) -> aiowamp.URI:
+        ...
+
+    @property
+    def procedure(self) -> aiowamp.URI:
+        """Concrete procedure that caused the invocation.
+
+        This will be the same as `registered_procedure` unless the procedure was
+        registered with a pattern-based matching policy.
+        """
+        try:
+            return aiowamp.URI(self.details["procedure"])
+        except KeyError:
+            return self.registered_procedure
 
     @property
     @abc.abstractmethod
@@ -215,68 +242,6 @@ class InvocationABC(ArgsMixin, abc.ABC):
 
     @abc.abstractmethod
     async def _receive_interrupt(self, interrupt: aiowamp.Interrupt) -> None:
-        ...
-
-
-ProgressHandler = Callable[[InvocationProgress], MaybeAwaitable[Any]]
-"""Type of a progress handler function.
-
-The function is called with the invocation progress instance.
-If a progress handler returns an awaitable object, it is awaited.
-
-The return value is ignored.
-"""
-
-
-class CallABC(Awaitable[InvocationResult], AsyncIterator[InvocationProgress], abc.ABC):
-    __slots__ = ()
-
-    def __str__(self) -> str:
-        return f"Call {self.request_id}"
-
-    def __await__(self):
-        return self.result().__await__()
-
-    def __aiter__(self):
-        return self
-
-    async def __anext__(self):
-        progress = await self.next_progress()
-        if progress is None:
-            raise StopAsyncIteration
-
-        return progress
-
-    @property
-    @abc.abstractmethod
-    def request_id(self) -> int:
-        ...
-
-    @property
-    @abc.abstractmethod
-    def done(self) -> bool:
-        ...
-
-    @property
-    @abc.abstractmethod
-    def cancelled(self) -> bool:
-        ...
-
-    @abc.abstractmethod
-    def on_progress(self, handler: aiowamp.ProgressHandler) -> None:
-        ...
-
-    @abc.abstractmethod
-    async def result(self) -> aiowamp.InvocationResult:
-        ...
-
-    @abc.abstractmethod
-    async def next_progress(self) -> Optional[aiowamp.InvocationProgress]:
-        ...
-
-    @abc.abstractmethod
-    async def cancel(self, cancel_mode: aiowamp.CancelMode = None, *,
-                     options: aiowamp.WAMPDict = None) -> None:
         ...
 
 
@@ -385,7 +350,129 @@ will be sent as the final result immediately.
 This can be used to perform some actions after the result has been sent.
 """
 
-SubscriptionHandler = Callable[[aiowamp.msg.Event], MaybeAwaitable[Any]]
+
+class CallABC(Awaitable[InvocationResult], AsyncIterator[InvocationProgress], abc.ABC):
+    __slots__ = ()
+
+    def __str__(self) -> str:
+        return f"Call {self.request_id}"
+
+    def __await__(self):
+        return self.result().__await__()
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        progress = await self.next_progress()
+        if progress is None:
+            raise StopAsyncIteration
+
+        return progress
+
+    @property
+    @abc.abstractmethod
+    def request_id(self) -> int:
+        ...
+
+    @property
+    @abc.abstractmethod
+    def done(self) -> bool:
+        ...
+
+    @property
+    @abc.abstractmethod
+    def cancelled(self) -> bool:
+        ...
+
+    @abc.abstractmethod
+    def on_progress(self, handler: aiowamp.ProgressHandler) -> None:
+        ...
+
+    @abc.abstractmethod
+    async def result(self) -> aiowamp.InvocationResult:
+        ...
+
+    @abc.abstractmethod
+    async def next_progress(self) -> Optional[aiowamp.InvocationProgress]:
+        ...
+
+    @abc.abstractmethod
+    async def cancel(self, cancel_mode: aiowamp.CancelMode = None, *,
+                     options: aiowamp.WAMPDict = None) -> None:
+        ...
+
+
+class SubscriptionEventABC(ArgsMixin, abc.ABC):
+    __slots__ = ()
+
+    def __str__(self) -> str:
+        return f"{type(self).__qualname__} {self.publication_id}"
+
+    @property
+    @abc.abstractmethod
+    def publication_id(self) -> int:
+        ...
+
+    @property
+    @abc.abstractmethod
+    def subscribed_topic(self) -> aiowamp.URI:
+        ...
+
+    @property
+    def topic(self) -> aiowamp.URI:
+        """Concrete topic that caused the event.
+
+        This will be the same as `subscribed_topic` unless the handler
+        subscribed with a pattern-based matching policy.
+        """
+        try:
+            return aiowamp.URI(self.details["topic"])
+        except KeyError:
+            return self.subscribed_topic
+
+    @property
+    @abc.abstractmethod
+    def args(self) -> Tuple[aiowamp.WAMPType, ...]:
+        ...
+
+    @property
+    @abc.abstractmethod
+    def kwargs(self) -> aiowamp.WAMPDict:
+        ...
+
+    @property
+    @abc.abstractmethod
+    def details(self) -> aiowamp.WAMPDict:
+        ...
+
+    @property
+    def publisher_id(self) -> Optional[int]:
+        """Get the publisher's id.
+
+        Returns:
+            WAMP id of the caller, or `None` if not disclosed.
+        """
+        return self.details.get("caller")
+
+    @property
+    def trust_level(self) -> Optional[int]:
+        """Get the router assigned trust level.
+
+        The trust level 0 means lowest trust, and higher integers represent
+        (application-defined) higher levels of trust.
+
+        Returns:
+            The trust level, or `None` if not specified.
+        """
+        return self.details.get("trustlevel")
+
+    @abc.abstractmethod
+    async def unsubscribe(self) -> None:
+        ...
+
+
+SubscriptionHandler = Callable[[SubscriptionEventABC], MaybeAwaitable[Any]]
 """Type of a subscription handler function.
 
 The handler receives the `aiowamp.msg.Event` each time it is published.
