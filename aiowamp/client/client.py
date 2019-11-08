@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-from typing import AsyncIterator, Awaitable, Dict, Optional, TypeVar
+from typing import AsyncIterator, Awaitable, Dict, Optional, TypeVar, Tuple
 
 import aiowamp
 from .abstract import ClientABC
@@ -31,10 +31,10 @@ class Client(ClientABC):
     __running_procedures: Dict[int, ProcedureRunnerABC]
 
     __procedure_ids: Dict[aiowamp.URI, int]
-    __procedures: Dict[int, RunnerFactory]
+    __procedures: Dict[int, Tuple[RunnerFactory, aiowamp.URI]]
 
     __sub_ids: Dict[aiowamp.URI, int]
-    __sub_handlers: Dict[int, aiowamp.SubscriptionHandler]
+    __sub_handlers: Dict[int, Tuple[aiowamp.SubscriptionHandler, aiowamp.URI]]
 
     def __init__(self, session: aiowamp.SessionABC) -> None:
         self.session = session
@@ -59,15 +59,14 @@ class Client(ClientABC):
         return f"{type(self).__qualname__} {self.session.session_id}"
 
     async def __handle_invocation(self, invocation_msg: aiowamp.msg.Invocation) -> None:
-        reg_id = invocation_msg.registration_id
-        invocation = aiowamp.Invocation(self.session, invocation_msg, procedure="")
-
         try:
-            runner_factory = self.__procedures[reg_id]
+            runner_factory, uri = self.__procedures[invocation_msg.registration_id]
         except KeyError:
             # TODO send error response
-            log.warning("%s: received invocation for unknown registration: %r", self, invocation)
+            log.warning("%s: received invocation for unknown registration: %r", self, invocation_msg)
             return
+
+        invocation = aiowamp.Invocation(self.session, invocation_msg, procedure=uri)
 
         try:
             runner = runner_factory(invocation)
@@ -92,8 +91,9 @@ class Client(ClientABC):
 
         await runner.interrupt(aiowamp.Interrupt(interrupt_msg.options))
 
-    async def __handle_event(self, event_msg: aiowamp.msg.Event, handler: aiowamp.SubscriptionHandler) -> None:
-        event = aiowamp.SubscriptionEvent(self, event_msg, topic="")
+    async def __handle_event(self, event_msg: aiowamp.msg.Event, handler: aiowamp.SubscriptionHandler,
+                             topic: aiowamp.URI) -> None:
+        event = aiowamp.SubscriptionEvent(self, event_msg, topic=topic)
         await call_async_fn(handler, event)
 
     async def __handle_message(self, msg: aiowamp.MessageABC) -> None:
@@ -144,11 +144,11 @@ class Client(ClientABC):
         event = aiowamp.message_as_type(msg, aiowamp.msg.Event)
         if event:
             try:
-                handler = self.__sub_handlers[event.subscription_id]
+                handler, uri = self.__sub_handlers[event.subscription_id]
             except KeyError:
                 log.warning(f"%s: received event for unknown subscription: %r", self, event)
             else:
-                await self.__handle_event(event, handler)
+                await self.__handle_event(event, handler, uri)
 
             return
 
@@ -234,7 +234,7 @@ class Client(ClientABC):
 
         reg_id = registered.registration_id
         self.__procedure_ids[procedure_uri] = reg_id
-        self.__procedures[reg_id] = runner
+        self.__procedures[reg_id] = runner, procedure_uri
 
     async def unregister(self, procedure: str) -> None:
         try:
@@ -298,7 +298,7 @@ class Client(ClientABC):
     async def subscribe(self, topic: str, callback: aiowamp.SubscriptionHandler, *,
                         match_policy: aiowamp.MatchPolicy = None,
                         options: aiowamp.WAMPDict = None) -> None:
-        topic = aiowamp.URI(topic)
+        topic_uri = aiowamp.URI(topic)
 
         if match_policy:
             options = _set_value(options, "match", match_policy)
@@ -308,14 +308,14 @@ class Client(ClientABC):
             await self.session.send(aiowamp.msg.Subscribe(
                 req_id,
                 options or {},
-                topic,
+                topic_uri,
             ))
 
         subscribed = check_message_response(await resp, aiowamp.msg.Subscribed)
 
         sub_id = subscribed.subscription_id
-        self.__sub_ids[topic] = sub_id
-        self.__sub_handlers[sub_id] = callback
+        self.__sub_ids[topic_uri] = sub_id
+        self.__sub_handlers[sub_id] = callback, topic_uri
 
     async def unsubscribe(self, topic: str) -> None:
         # delete the local subscription first. This might lead to the situation
