@@ -1,4 +1,5 @@
-from typing import Container, Iterable, List, Optional, TypeVar, Union
+import bisect
+from typing import Container, Iterable, List, Optional, Sequence, Set, TypeVar, Union
 
 import aiowamp
 
@@ -8,24 +9,53 @@ BWItemType = Union[int, str]
 
 
 class BlackWhiteList(Container[BWItemType]):
+    """Data type for black- and whitelisting subscribers.
+
+    BlackWhiteList is quite a mouthful, so let's use bwlist for short.
+
+    If both exclusion and eligible rules are present, the Broker
+    will dispatch events published only to Subscribers that are not explicitly
+    excluded and which are explicitly eligible.
+
+    Like `list`, an empty bwlist is falsy
+    (i.e. `bool(BlackWhiteList()) is False`).
+
+    bwlist is also a container (i.e. support `x in bwlist`), it returns whether
+    the given key will receive the event with the current constraints.
+
+    bwlist will keep the constraint lists in ascending order and its methods are
+    optimised under the assumption that the order is maintained.
+    """
     __slots__ = ("excluded_ids", "excluded_auth_ids", "excluded_auth_roles",
                  "eligible_ids", "eligible_auth_ids", "eligible_auth_roles")
 
     excluded_ids: Optional[List[int]]
+    """Excluded session ids.
+    
+    Only subscribers whose session id IS NOT in this list will receive the event.
+    """
     excluded_auth_ids: Optional[List[str]]
+    """Excluded auth ids."""
     excluded_auth_roles: Optional[List[str]]
+    """Excluded auth roles."""
 
     eligible_ids: Optional[List[int]]
+    """Eligible session ids.
+    
+    Only subscribers whose session id IS in this list will receive the event.
+    """
     eligible_auth_ids: Optional[List[str]]
+    """Eligible auth ids."""
     eligible_auth_roles: Optional[List[str]]
+    """Eligible auth roles."""
 
     def __init__(self, *,
                  excluded_ids: Iterable[int] = None,
-                 excluded_auth_ids: Iterable[int] = None,
-                 excluded_auth_roles: Iterable[int] = None,
+                 excluded_auth_ids: Iterable[str] = None,
+                 excluded_auth_roles: Iterable[str] = None,
                  eligible_ids: Iterable[int] = None,
-                 eligible_auth_ids: Iterable[int] = None,
-                 eligible_auth_roles: Iterable[int] = None,
+                 eligible_auth_ids: Iterable[str] = None,
+                 eligible_auth_roles: Iterable[str] = None,
                  ) -> None:
         self.excluded_ids = unique_list_or_none(excluded_ids)
         self.excluded_auth_ids = unique_list_or_none(excluded_auth_ids)
@@ -60,22 +90,22 @@ class BlackWhiteList(Container[BWItemType]):
         return contains_if_not_none(self.excluded_ids, receiver, True)
 
     def exclude_session_id(self, session_id: int) -> None:
-        self.excluded_ids = append_optional_unique_list(self.excluded_ids, session_id)
+        self.excluded_ids = add_optional_unique_list(self.excluded_ids, session_id)
 
     def exclude_auth_id(self, auth_id: str) -> None:
-        self.excluded_auth_ids = append_optional_unique_list(self.excluded_auth_ids, auth_id)
+        self.excluded_auth_ids = add_optional_unique_list(self.excluded_auth_ids, auth_id)
 
     def exclude_auth_role(self, auth_role: str) -> None:
-        self.excluded_auth_roles = append_optional_unique_list(self.excluded_auth_roles, auth_role)
+        self.excluded_auth_roles = add_optional_unique_list(self.excluded_auth_roles, auth_role)
 
     def allow_session_id(self, session_id: int) -> None:
-        self.eligible_ids = append_optional_unique_list(self.eligible_ids, session_id)
+        self.eligible_ids = add_optional_unique_list(self.eligible_ids, session_id)
 
     def allow_auth_id(self, auth_id: str) -> None:
-        self.eligible_auth_ids = append_optional_unique_list(self.eligible_auth_ids, auth_id)
+        self.eligible_auth_ids = add_optional_unique_list(self.eligible_auth_ids, auth_id)
 
     def allow_auth_role(self, auth_role: str) -> None:
-        self.eligible_auth_roles = append_optional_unique_list(self.eligible_auth_roles, auth_role)
+        self.eligible_auth_roles = add_optional_unique_list(self.eligible_auth_roles, auth_role)
 
     def to_options(self, options: aiowamp.WAMPDict = None) -> aiowamp.WAMPDict:
         options = options or {}
@@ -100,25 +130,49 @@ class BlackWhiteList(Container[BWItemType]):
 T = TypeVar("T")
 
 
+def index(s: Sequence[T], v: T) -> int:
+    i = bisect.bisect_left(s, v)
+    if i != len(s) and s[i] == v:
+        return i
+
+    return s.index(v)
+
+
+def contains(c: Container[T], v: T) -> bool:
+    if isinstance(c, Sequence):
+        try:
+            index(c, v)
+        except ValueError:
+            return False
+        else:
+            return True
+
+    return v in c
+
+
 def contains_if_not_none(c: Optional[Container[T]], v: T, default: bool) -> bool:
     if c is None:
         return default
 
-    return v in c
+    return contains(c, v)
 
 
 def unique_list_or_none(it: Optional[Iterable[T]]) -> Optional[List[T]]:
     if it is None:
         return None
 
+    # KeysView is a subtype of set, so this should do.
+    if isinstance(it, Set):
+        return list(it)
+
     return list(set(it))
 
 
-def append_optional_unique_list(l: Optional[List[T]], v: T) -> List[T]:
+def add_optional_unique_list(l: Optional[List[T]], v: T) -> List[T]:
     if l is None:
         return [v]
 
-    if v not in l:
-        l.append(v)
+    if not contains(l, v):
+        bisect.insort(l, v)
 
     return v
