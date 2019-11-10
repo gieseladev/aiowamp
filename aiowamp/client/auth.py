@@ -127,7 +127,7 @@ class CRAuth(AuthMethodABC):
 
         digest = hmac.digest(secret, challenge_str, hashlib.sha256)
         signature = base64.b64encode(digest).encode()
-        return aiowamp.msg.Authenticate(signature, {}, )
+        return aiowamp.msg.Authenticate(signature, {})
 
 
 class TicketAuth(AuthMethodABC):

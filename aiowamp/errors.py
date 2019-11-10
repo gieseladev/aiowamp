@@ -6,6 +6,7 @@ from typing import Type
 import aiowamp
 
 __all__ = ["Error",
+           "AbortError", "AuthError",
            "TransportError",
            "InvalidMessage", "UnexpectedMessageError",
            "ErrorResponse", "RPCError",
@@ -15,6 +16,24 @@ __all__ = ["Error",
 
 class Error(Exception):
     """Base exception for all WAMP related errors."""
+    __slots__ = ()
+
+
+class AbortError(Error):
+    __slots__ = ("reason", "details")
+
+    reason: str
+    details: aiowamp.WAMPDict
+
+    def __init__(self, msg: aiowamp.msg.Abort) -> None:
+        self.reason = msg.reason
+        self.details = msg.details
+
+    def __str__(self) -> str:
+        return f"{self.reason} (details = {self.details})"
+
+
+class AuthError(Error):
     __slots__ = ()
 
 

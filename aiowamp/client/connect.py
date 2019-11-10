@@ -11,20 +11,30 @@ __all__ = ["connect", "join_realm"]
 log = logging.getLogger(__name__)
 
 
-# TODO raise aborterror for ABORT instead of unexpected message.
-
-async def _authenticate(transport: aiowamp.TransportABC, challenge: aiowamp.msg.Challenge, *,
-                        keyring: aiowamp.AuthKeyringABC) -> aiowamp.msg.Welcome:
-    # TODO handle KeyError
-    method = keyring[challenge.auth_method]
-    auth = await method.authenticate(challenge)
-    await transport.send(auth)
-
-    msg = await transport.recv()
+def assert_welcome(msg: aiowamp.MessageABC) -> aiowamp.msg.Welcome:
+    abort = aiowamp.message_as_type(msg, aiowamp.msg.Abort)
+    if abort:
+        raise aiowamp.AbortError(abort)
 
     welcome = aiowamp.message_as_type(msg, aiowamp.msg.Welcome)
     if not welcome:
         raise aiowamp.UnexpectedMessageError(msg, aiowamp.msg.Welcome)
+
+    return welcome
+
+
+async def _authenticate(transport: aiowamp.TransportABC, challenge: aiowamp.msg.Challenge, *,
+                        keyring: aiowamp.AuthKeyringABC) -> aiowamp.msg.Welcome:
+    try:
+        method = keyring[challenge.auth_method]
+    except KeyError:
+        raise aiowamp.AuthError(f"challenged with auth method {challenge.auth_method}, "
+                                f"but no such method in keyring: {keyring}") from None
+
+    auth = await method.authenticate(challenge)
+    await transport.send(auth)
+
+    welcome = assert_welcome(await transport.recv())
 
     # TODO SCRAM wants to analyze the welcome, so need another method
 
@@ -61,14 +71,11 @@ async def join_realm(transport: aiowamp.TransportABC, realm: str, *,
     challenge = aiowamp.message_as_type(msg, aiowamp.msg.Challenge)
     if challenge:
         if not keyring:
-            # TODO raise auth error
-            raise aiowamp.Error
+            raise aiowamp.AuthError(f"received challenged with no keyring: {challenge!r}")
 
         welcome = await _authenticate(transport, challenge, keyring=keyring)
     else:
-        welcome = aiowamp.message_as_type(msg, aiowamp.msg.Welcome)
-        if not welcome:
-            raise aiowamp.UnexpectedMessageError(msg, aiowamp.msg.Welcome)
+        welcome = assert_welcome(msg)
 
     return aiowamp.Session(transport, welcome.session_id, realm, welcome.details)
 
