@@ -1,5 +1,5 @@
 import textwrap
-from typing import Iterable, List, Reversible, Tuple, Type
+from typing import Iterable, List, Optional, Reversible, Type
 
 import aiowamp
 
@@ -8,42 +8,106 @@ __all__ = []
 # The message types are generated dynamically from the following list.
 
 MSGS = (
-    ("Hello", 1, ("realm", "details")),
+    ("Hello", 1, ("realm:URI", "details")),
     ("Welcome", 2, ("session_id", "details")),
-    ("Abort", 3, ("details", "reason")),
+    ("Abort", 3, ("details", "reason:URI")),
     ("Challenge", 4, ("auth_method", "extra")),
     ("Authenticate", 5, ("signature", "extra")),
-    ("Goodbye", 6, ("details", "reason")),
-    ("Error", 8, ("msg_type", "request_id", "details", "error"),
-     (("args", "list()"), ("kwargs", "dict()"))),
+    ("Goodbye", 6, ("details", "reason:URI")),
+    ("Error", 8, ("msg_type", "request_id", "details", "error:URI"),
+     ("args:list", "kwargs:dict")),
 
-    ("Publish", 16, ("request_id", "options", "topic"),
-     (("args", "list()"), ("kwargs", "dict()"))),
+    ("Publish", 16, ("request_id", "options", "topic:URI"),
+     ("args:list", "kwargs:dict")),
     ("Published", 17, ("request_id", "publication_id")),
 
-    ("Subscribe", 32, ("request_id", "options", "topic")),
+    ("Subscribe", 32, ("request_id", "options", "topic:URI")),
     ("Subscribed", 33, ("request_id", "subscription_id")),
     ("Unsubscribe", 34, ("request_id", "subscription_id")),
     ("Unsubscribed", 35, ("request_id",)),
     ("Event", 36, ("subscription_id", "publication_id", "details"),
-     (("args", "list()"), ("kwargs", "dict()"))),
+     ("args:list", "kwargs:dict")),
 
-    ("Call", 48, ("request_id", "options", "procedure"),
-     (("args", "list()"), ("kwargs", "dict()"))),
+    ("Call", 48, ("request_id", "options", "procedure:URI"),
+     ("args:list", "kwargs:dict")),
     ("Cancel", 49, ("request_id", "options")),
     ("Result", 50, ("request_id", "details"),
-     (("args", "list()"), ("kwargs", "dict()"))),
+     ("args:list", "kwargs:dict")),
 
-    ("Register", 64, ("request_id", "options", "procedure")),
+    ("Register", 64, ("request_id", "options", "procedure:URI")),
     ("Registered", 65, ("request_id", "registration_id")),
     ("Unregister", 66, ("request_id", "registration_id")),
     ("Unregistered", 67, ("request_id",)),
     ("Invocation", 68, ("request_id", "registration_id", "details"),
-     (("args", "list()"), ("kwargs", "dict()"))),
+     ("args:list", "kwargs:dict")),
     ("Interrupt", 69, ("request_id", "options")),
     ("Yield", 70, ("request_id", "options"),
-     (("args", "list()"), ("kwargs", "dict()"))),
+     ("args:list", "kwargs:dict")),
 )
+
+
+class Attr:
+    name: str
+    cls_name: Optional[str]
+    cls: Optional[str]
+
+    def __init__(self, name: str, cls: str = None) -> None:
+        self.name = name
+        if cls is None:
+            self.cls_name = None
+            self.cls = None
+            return
+
+        self.cls_name = cls
+
+        if cls == "URI":
+            self.cls = "aiowamp.URI"
+        elif cls in ("list", "dict"):
+            self.cls = cls
+        else:
+            raise ValueError(f"unknown cls: {cls!r}")
+
+    @classmethod
+    def parse(cls, s: str):
+        parts = s.split(":", 1)
+        return cls(*parts)
+
+    def __repr__(self) -> str:
+        return f"{type(self).__qualname__}({self.name!r}, cls={self.cls!r})"
+
+    def __str__(self) -> str:
+        if self.cls is None:
+            return self.name
+
+        return f"{self.name}:{self.cls}"
+
+    def new(self) -> str:
+        assert self.cls
+        return f"{self.cls}()"
+
+    def quoted(self) -> str:
+        return f"\"{self.name}\""
+
+    def convert(self, obj: str) -> str:
+        if self.cls is not None:
+            return f"{self.cls}({obj})"
+
+        return obj
+
+    def bound(self, obj: str = "self") -> str:
+        return f"{obj}.{self.name}"
+
+    def repr(self, obj: str = "self") -> str:
+        return f"{self.name}={{{self.bound(obj)}!r}}"
+
+    def bound_setter(self, obj: str = "self", arg: str = None) -> str:
+        arg = arg or self.name
+        return f"{self.bound(obj)}={self.convert(arg)}"
+
+    def bound_raw_setter(self, obj: str = "self", arg: str = None) -> str:
+        arg = arg or self.name
+        return f"{self.bound(obj)}={arg}"
+
 
 OPTIONAL_ATTR_TEMPLATE = """
 if {bound_attr}:
@@ -54,23 +118,20 @@ elif include:
 """
 
 
-# TODO convert string to URI when required
-
-
-def _gen_optional_attr_code(attrs: Reversible[Tuple[str, str]], end_index: int) -> str:
+def _gen_optional_attr_code(attrs: Reversible[Attr], end_index: int) -> str:
     attr_parts: List[str] = []
 
-    for (attr, factory) in reversed(attrs):
+    for attr in reversed(attrs):
         attr_parts.append(OPTIONAL_ATTR_TEMPLATE.format(
             index=end_index,
-            bound_attr=f"self.{attr}",
-            empty_value_factory=factory,
+            bound_attr=attr.bound(),
+            empty_value_factory=attr.new(),
         ))
 
     if not attr_parts:
         return ""
 
-    return f"include = False\n" + "\n".join(attr_parts)
+    return f"include=False\n" + "\n".join(attr_parts)
 
 
 MSG_TEMPLATE = """
@@ -96,12 +157,12 @@ class {name}(aiowamp.MessageABC):
 
 def _create_msg_cls(name: str, message_type: int,
                     attrs: Iterable[str],
-                    optional_attrs: Iterable[Tuple[str, str]]) -> Type[aiowamp.MessageABC]:
-    attrs, optional_attrs = list(attrs), list(optional_attrs)
-    all_attrs = [*attrs, *(attr for attr, _ in optional_attrs)]
+                    optional_attrs: Iterable[str]) -> Type[aiowamp.MessageABC]:
+    attrs, optional_attrs = list(map(Attr.parse, attrs)), list(map(Attr.parse, optional_attrs))
+    all_attrs = [*attrs, *optional_attrs]
 
     indent = 8 * " "
-    bound_attrs_str = "self.message_type," + ",".join(f"self.{attr}" for attr in attrs)
+    bound_attrs_str = f"{message_type!r}," + ",".join(attr.bound() for attr in attrs)
     if optional_attrs:
         to_message_list_code = textwrap.indent(
             (f"msg_list = [{bound_attrs_str}]\n" +
@@ -112,14 +173,19 @@ def _create_msg_cls(name: str, message_type: int,
     else:
         to_message_list_code = f"{indent}return [{bound_attrs_str}]"
 
+    init_sig_str = ",".join(attr.name for attr in attrs) + "," + \
+                   ",".join(f"{attr.name}=None" for attr in optional_attrs)
+
+    set_attr_lines = ";".join(attr.bound_setter() for attr in attrs) + ";" + \
+                     ";".join(attr.bound_raw_setter() for attr in optional_attrs)
     code = MSG_TEMPLATE.format(
         name=name,
         message_type=message_type,
-        init_sig_str=", ".join(attrs) + "," + ",".join(f"{attr} = None" for attr, _ in optional_attrs),
-        quoted_attrs_list_str=", ".join(map(repr, all_attrs)),
-        set_attr_lines=";".join(f"self.{attr} = {attr}" for attr in all_attrs),
+        init_sig_str=init_sig_str,
+        quoted_attrs_list_str=", ".join(attr.quoted() for attr in all_attrs),
+        set_attr_lines=set_attr_lines,
         to_message_list_code=to_message_list_code,
-        repr_attrs_str=",".join(f"{attr}={{self.{attr}!r}}" for attr in all_attrs),
+        repr_attrs_str=",".join(attr.repr() for attr in all_attrs),
     )
 
     loc = {}
@@ -152,7 +218,7 @@ _create_msgs()
 # because key is defined here, it will be deleted by the code below
 key = None
 for key in tuple(globals()):
-    if key.endswith("__") or key in __all__:
+    if key.endswith("__") or key in __all__ or key == "aiowamp":
         continue
 
     del globals()[key]

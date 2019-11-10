@@ -564,13 +564,13 @@ class AuthMethodABC(abc.ABC):
     def __str__(self) -> str:
         return f"{type(self).__qualname__} {self.method_name!r}"
 
-    @abc.abstractmethod
     @property
+    @abc.abstractmethod
     def requires_auth_id(self) -> bool:
         ...
 
-    @abc.abstractmethod
     @property
+    @abc.abstractmethod
     def auth_extra(self) -> Optional[aiowamp.WAMPDict]:
         ...
 
@@ -598,12 +598,12 @@ class AuthKeyringABC(Mapping[str, AuthMethodABC], abc.ABC):
     def __iter__(self) -> Iterator[str]:
         ...
 
-    @abc.abstractmethod
     @property
+    @abc.abstractmethod
     def auth_id(self) -> Optional[str]:
         ...
 
-    @abc.abstractmethod
     @property
+    @abc.abstractmethod
     def auth_extra(self) -> Optional[aiowamp.WAMPDict]:
         ...
