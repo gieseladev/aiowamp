@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import abc
-from typing import Any, AsyncGenerator, AsyncIterator, Awaitable, Callable, Iterator, Mapping, Optional, Sequence, \
-    Tuple, TypeVar, Union, overload
+from typing import Any, AsyncGenerator, AsyncIterator, Awaitable, Callable, ClassVar, Iterator, Mapping, Optional, \
+    Sequence, Tuple, TypeVar, Union, overload
 
 import aiowamp
 
@@ -12,7 +12,8 @@ __all__ = ["MaybeAwaitable",
            "InvocationHandlerResult", "InvocationHandler",
            "CallABC",
            "SubscriptionEventABC", "SubscriptionHandler",
-           "ClientABC"]
+           "ClientABC",
+           "AuthMethodABC", "AuthKeyringABC"]
 
 T = TypeVar("T")
 
@@ -552,4 +553,57 @@ class ClientABC(abc.ABC):
                       exclude_me: bool = None,
                       disclose_me: bool = None,
                       options: aiowamp.WAMPDict = None) -> None:
+        ...
+
+
+class AuthMethodABC(abc.ABC):
+    __slots__ = ()
+
+    method_name: ClassVar[str]
+
+    def __str__(self) -> str:
+        return f"{type(self).__qualname__} {self.method_name!r}"
+
+    @abc.abstractmethod
+    @property
+    def requires_auth_id(self) -> bool:
+        ...
+
+    @abc.abstractmethod
+    @property
+    def auth_extra(self) -> Optional[aiowamp.WAMPDict]:
+        ...
+
+    @abc.abstractmethod
+    async def authenticate(self, challenge: aiowamp.msg.Challenge) -> aiowamp.msg.Authenticate:
+        ...
+
+
+class AuthKeyringABC(Mapping[str, AuthMethodABC], abc.ABC):
+    __slots__ = ()
+
+    def __str__(self) -> str:
+        methods = ", ".join(self)
+        return f"{type(self).__qualname__}({methods})"
+
+    @abc.abstractmethod
+    def __getitem__(self, method: str) -> AuthMethodABC:
+        ...
+
+    @abc.abstractmethod
+    def __len__(self) -> int:
+        ...
+
+    @abc.abstractmethod
+    def __iter__(self) -> Iterator[str]:
+        ...
+
+    @abc.abstractmethod
+    @property
+    def auth_id(self) -> Optional[str]:
+        ...
+
+    @abc.abstractmethod
+    @property
+    def auth_extra(self) -> Optional[aiowamp.WAMPDict]:
         ...

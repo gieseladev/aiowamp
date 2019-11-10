@@ -2,37 +2,52 @@ from __future__ import annotations
 
 import logging
 import urllib.parse as urlparse
-from typing import Iterable, Union
+from typing import Union
 
 import aiowamp
 
-__all__ = ["KeyringType",
-           "connect", "join_realm"]
+__all__ = ["connect", "join_realm"]
 
 log = logging.getLogger(__name__)
 
-KeyringType = Union[aiowamp.AuthKeyringABC, Iterable[aiowamp.AuthMethodABC]]
 
+# TODO raise aborterror for ABORT instead of unexpected message.
 
 async def _authenticate(transport: aiowamp.TransportABC, challenge: aiowamp.msg.Challenge, *,
-                        keyring: aiowamp.AuthKeyringABC) -> None:
+                        keyring: aiowamp.AuthKeyringABC) -> aiowamp.msg.Welcome:
     # TODO handle KeyError
     method = keyring[challenge.auth_method]
     auth = await method.authenticate(challenge)
     await transport.send(auth)
 
+    msg = await transport.recv()
+
+    welcome = aiowamp.message_as_type(msg, aiowamp.msg.Welcome)
+    if not welcome:
+        raise aiowamp.UnexpectedMessageError(msg, aiowamp.msg.Welcome)
+
+    # TODO SCRAM wants to analyze the welcome, so need another method
+
+    return welcome
+
 
 async def join_realm(transport: aiowamp.TransportABC, realm: str, *,
-                     keyring: KeyringType = None,
+                     keyring: aiowamp.AuthKeyringABC = None,
                      roles: aiowamp.WAMPDict = None,
                      details: aiowamp.WAMPDict = None) -> aiowamp.Session:
-    if keyring is not None:
-        keyring = _get_keyring(keyring)
-
     details = details or {}
     if keyring:
         log.debug("using %s", keyring)
         details["authmethods"] = list(keyring)
+
+        auth_id = keyring.auth_id
+        if auth_id is not None:
+            details["authid"] = auth_id
+
+        auth_extra = keyring.auth_extra
+        if auth_extra is not None:
+            details["authextra"] = auth_extra
+
     if roles is not None:
         details["roles"] = roles
 
@@ -49,12 +64,11 @@ async def join_realm(transport: aiowamp.TransportABC, realm: str, *,
             # TODO raise auth error
             raise aiowamp.Error
 
-        await _authenticate(transport, challenge, keyring=keyring)
-        msg = await transport.recv()
-
-    welcome = aiowamp.message_as_type(msg, aiowamp.msg.Welcome)
-    if not welcome:
-        raise aiowamp.UnexpectedMessageError(msg, aiowamp.msg.Welcome)
+        welcome = await _authenticate(transport, challenge, keyring=keyring)
+    else:
+        welcome = aiowamp.message_as_type(msg, aiowamp.msg.Welcome)
+        if not welcome:
+            raise aiowamp.UnexpectedMessageError(msg, aiowamp.msg.Welcome)
 
     return aiowamp.Session(transport, welcome.session_id, realm, welcome.details)
 
@@ -62,7 +76,7 @@ async def join_realm(transport: aiowamp.TransportABC, realm: str, *,
 async def connect(url: Union[str, urlparse.ParseResult], *,
                   realm: str,
                   serializer: aiowamp.SerializerABC = None,
-                  keyring: KeyringType = None) -> aiowamp.Client:
+                  keyring: aiowamp.AuthKeyringABC = None) -> aiowamp.Client:
     if not isinstance(url, urlparse.ParseResult):
         url = urlparse.urlparse(url)
 
@@ -77,10 +91,3 @@ async def connect(url: Union[str, urlparse.ParseResult], *,
                                keyring=keyring,
                                roles=aiowamp.CLIENT_ROLES)
     return aiowamp.Client(session)
-
-
-def _get_keyring(keyring: KeyringType) -> aiowamp.AuthKeyringABC:
-    if isinstance(keyring, aiowamp.AuthKeyringABC):
-        return keyring
-
-    return aiowamp.AuthKeyring(*keyring)
