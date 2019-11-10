@@ -1,8 +1,9 @@
 from .abstract import *
+from .auth import *
 from .bwlist import BlackWhiteList
 from .call import Call
 from .client import Client
-from .connect import connect, join_realm
+from .connect import connect
 from .enum import *
 from .event import SubscriptionEvent
 from .invocation import Invocation
