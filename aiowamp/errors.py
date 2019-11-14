@@ -4,18 +4,25 @@ import dataclasses
 from typing import Type
 
 import aiowamp
+from .uri_map import URIMap
 
 __all__ = ["Error",
-           "AbortError", "AuthError",
            "TransportError",
+           "AbortError", "AuthError",
            "InvalidMessage", "UnexpectedMessageError",
-           "ErrorResponse", "RPCError",
+           "ErrorResponse",
+           "register_error_response", "get_error_response_class", "create_error_response",
            "ClientClosed",
            "Interrupt"]
 
 
 class Error(Exception):
     """Base exception for all WAMP related errors."""
+    __slots__ = ()
+
+
+class TransportError(Error):
+    """Transport level error."""
     __slots__ = ()
 
 
@@ -34,11 +41,6 @@ class AbortError(Error):
 
 
 class AuthError(Error):
-    __slots__ = ()
-
-
-class TransportError(Error):
-    """Transport level error."""
     __slots__ = ()
 
 
@@ -87,9 +89,37 @@ class ErrorResponse(Error):
 
         return s
 
+    @property
+    def uri(self) -> aiowamp.URI:
+        return self.message.error
 
-class RPCError(ErrorResponse):
-    __slots__ = ()
+
+ERR_RESP_MAP: URIMap[Type[ErrorResponse]] = URIMap()
+
+
+def register_error_response(uri: str):
+    uri = aiowamp.URI.as_uri(uri)
+
+    def decorator(cls: Type[ErrorResponse]):
+        if not issubclass(cls, ErrorResponse):
+            raise TypeError(f"error class must be of type {ErrorResponse.__qualname__}")
+
+        ERR_RESP_MAP[uri] = cls
+
+        return cls
+
+    return decorator
+
+
+def get_error_response_class(uri: str) -> Type[ErrorResponse]:
+    return ERR_RESP_MAP[uri]
+
+
+def create_error_response(message: aiowamp.msg.Error) -> aiowamp.ErrorResponse:
+    try:
+        return get_error_response_class(message.error)(message)
+    except LookupError:
+        return ErrorResponse(message)
 
 
 class ClientClosed(Error):

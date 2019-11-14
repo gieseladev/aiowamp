@@ -11,5 +11,7 @@ from .uri import *
 from . import msg, transports, uri
 from .client import *
 
+from . import err
+
 __version__ = "0.0.1"
 __author__ = "Giesela Inc."

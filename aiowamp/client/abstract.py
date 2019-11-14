@@ -163,7 +163,7 @@ class InvocationABC(ArgsMixin, abc.ABC):
         registered with a pattern-based matching policy.
         """
         try:
-            return aiowamp.URI(self.details["procedure"])
+            return aiowamp.URI.as_uri(self.details["procedure"])
         except KeyError:
             return self.registered_procedure
 
@@ -429,7 +429,7 @@ class SubscriptionEventABC(ArgsMixin, abc.ABC):
         subscribed with a pattern-based matching policy.
         """
         try:
-            return aiowamp.URI(self.details["topic"])
+            return aiowamp.URI.as_uri(self.details["topic"])
         except KeyError:
             return self.subscribed_topic
 
@@ -575,8 +575,12 @@ class AuthMethodABC(abc.ABC):
         ...
 
     @abc.abstractmethod
-    async def authenticate(self, challenge: aiowamp.msg.Challenge) -> aiowamp.msg.Authenticate:
+    async def authenticate(self, challenge: aiowamp.msg.Challenge) \
+            -> Union[aiowamp.msg.Authenticate, aiowamp.msg.Abort]:
         ...
+
+    async def check_welcome(self, welcome: aiowamp.msg.Welcome) -> None:
+        pass
 
 
 class AuthKeyringABC(Mapping[str, AuthMethodABC], abc.ABC):
@@ -607,3 +611,15 @@ class AuthKeyringABC(Mapping[str, AuthMethodABC], abc.ABC):
     @abc.abstractmethod
     def auth_extra(self) -> Optional[aiowamp.WAMPDict]:
         ...
+
+# class SerializableAuthMethodABC(AuthMethodABC, abc.ABC):
+#     __slots__ = ()
+#
+#     @classmethod
+#     @abc.abstractmethod
+#     def load(cls: Type[T], data: aiowamp.WAMPDict) -> T:
+#         ...
+#
+#     @abc.abstractmethod
+#     def dump(self) -> aiowamp.WAMPDict:
+#         return {"method": self.method_name}

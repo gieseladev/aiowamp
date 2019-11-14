@@ -31,12 +31,22 @@ async def _authenticate(transport: aiowamp.TransportABC, challenge: aiowamp.msg.
         raise aiowamp.AuthError(f"challenged with auth method {challenge.auth_method}, "
                                 f"but no such method in keyring: {keyring}") from None
 
-    auth = await method.authenticate(challenge)
+    exc = None
+    try:
+        auth = await method.authenticate(challenge)
+    except Exception as e:
+        log.exception("authentication failed", e)
+        exc = e
+        auth = aiowamp.msg.Abort({"error": type(e).__qualname__}, aiowamp.uri.AUTHORIZATION_FAILED)
+
     await transport.send(auth)
 
-    welcome = assert_welcome(await transport.recv())
+    if aiowamp.is_message_type(auth, aiowamp.msg.Abort):
+        await transport.close()
+        raise aiowamp.AuthError(f"authentication aborted: {auth!r}") from exc
 
-    # TODO SCRAM wants to analyze the welcome, so need another method
+    welcome = assert_welcome(await transport.recv())
+    await method.check_welcome(welcome)
 
     return welcome
 
@@ -62,7 +72,7 @@ async def join_realm(transport: aiowamp.TransportABC, realm: str, *,
         details["roles"] = roles
 
     await transport.send(aiowamp.msg.Hello(
-        aiowamp.URI(realm),
+        aiowamp.URI.as_uri(realm),
         details,
     ))
 

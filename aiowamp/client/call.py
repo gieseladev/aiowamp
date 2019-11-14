@@ -156,7 +156,6 @@ class Call(CallABC):
 
             raise
 
-        # TODO raise specific RPCError exception types depending on the error URI
         result_msg = check_message_response(msg, aiowamp.msg.Result)
         return _create_invocation_result(result_msg.args, result_msg.kwargs, result_msg.details)
 

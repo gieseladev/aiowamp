@@ -1,44 +1,104 @@
+from typing import NewType, Optional, Type, TypeVar, Tuple
+
+__all__ = ["MatchPolicy", "MATCH_PREFIX", "MATCH_WILDCARD",
+           "URI"]
+
+MatchPolicy = NewType("MatchPolicy", str)
+"""Match policy for URIs."""
+
+MATCH_PREFIX = MatchPolicy("prefix")
+MATCH_WILDCARD = MatchPolicy("wildcard")
+
+T = TypeVar("T")
+
+
 class URI(str):
     """WAMP URI."""
-    __slots__ = ()
+    __slots__ = ("match_policy",)
+
+    match_policy: Optional[MatchPolicy]
+
+    def __new__(cls: Type[T], uri: str, *,
+                match_policy: MatchPolicy = None) -> T:
+        self = super().__new__(cls, uri)
+        self.match_policy = match_policy
+        return self
+
+    @classmethod
+    def as_uri(cls: Type[T], uri: str) -> T:
+        if isinstance(uri, cls):
+            return uri
+
+        return cls(uri)
 
     def __repr__(self) -> str:
-        return f"URI({str(self)!r})"
+        if self.match_policy is not None:
+            match_str = f", match_policy={self.match_policy!r}"
+        else:
+            match_str = ""
 
-    def prefix_match(self, prefix: str) -> bool:
+        return f"URI({str(self)!r}{match_str})"
+
+    def split_components(self) -> Tuple[str]:
+        return tuple(self.split("."))
+
+    def matches_self(self, other: str) -> bool:
+        return self.policy_match(self.match_policy, self, other)
+
+    @classmethod
+    def policy_match(cls, policy: MatchPolicy, uri: str, other: str) -> bool:
+        if policy is None:
+            return uri == other
+        elif policy == MATCH_WILDCARD:
+            return cls.wildcard_match(other, uri)
+        elif policy == MATCH_PREFIX:
+            return cls.prefix_match(other, uri)
+        else:
+            raise ValueError(f"unknown match policy: {policy!r}")
+
+    @staticmethod
+    def prefix_match(uri: str, prefix: str) -> bool:
         """Check whether the URI matches the prefix.
 
-        This is just `str.startswith`, but relabelled so it makes more sense in
-        the context.
-
         Args:
+            uri: URI to be checked.
             prefix: Prefix to check against.
 
         Returns:
             Whether the URI has the given prefix.
         """
-        return self.startswith(prefix)
+        if not uri.startswith(prefix):
+            return False
 
-    def wildcard_match(self, wildcard: str) -> bool:
+        try:
+            next_char = uri[len(prefix)]
+        except IndexError:
+            return True
+
+        return next_char == "."
+
+    @staticmethod
+    def wildcard_match(uri: str, wildcard: str) -> bool:
         """Check if the URI matches the wildcard.
 
         Wildcards have empty URI components which can match anything
         (apart from '.').
 
         Args:
+            uri: URI to be checked.
             wildcard: Wildcard to check against.
 
         Returns:
             Whether the URI matches the wildcard.
         """
-        self_parts = self.split(".")
+        parts = uri.split(".")
         wc_parts = wildcard.split(".")
 
-        if len(self_parts) != len(wc_parts):
+        if len(parts) != len(wc_parts):
             return False
 
-        for self_part, wc_part in zip(self_parts, wc_parts):
-            if wc_part and wc_part != self_part:
+        for part, wc_part in zip(parts, wc_parts):
+            if wc_part and wc_part != part:
                 return False
 
         return True

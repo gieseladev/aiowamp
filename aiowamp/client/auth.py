@@ -10,6 +10,7 @@ import aiowamp
 from .abstract import AuthKeyringABC, AuthMethodABC
 
 __all__ = ["AuthKeyring",
+           # "register_auth_method", "get_auth_method", "load_auth_method",
            "CRAuth", "TicketAuth", "ScramAuth"]
 
 log = logging.getLogger(__name__)
@@ -80,6 +81,44 @@ class AuthKeyring(AuthKeyringABC):
     @property
     def auth_extra(self) -> Optional[aiowamp.WAMPDict]:
         return self.__auth_extra
+
+
+# AUTH_METHODS: Dict[str, Type[SerializableAuthMethodABC]] = {}
+#
+#
+# def register_auth_method(*, overwrite: bool = False):
+#     def decorator(cls: Type[SerializableAuthMethodABC]):
+#         try:
+#             method_name = cls.method_name
+#         except AttributeError:
+#             raise NotImplementedError(f"Auth method {cls.__qualname__} does not specify a method_name") from None
+#
+#         if not overwrite and method_name in AUTH_METHODS:
+#             raise ValueError(
+#                 f"method with name {method_name} already defined by {AUTH_METHODS[method_name].__qualname__}."
+#                 f"Use overwrite=True to overwrite.")
+#
+#         AUTH_METHODS[method_name] = cls
+#
+#         return cls
+#
+#     return decorator
+#
+#
+# def get_auth_method(method_name: str) -> Type[SerializableAuthMethodABC]:
+#     try:
+#         return AUTH_METHODS[method_name]
+#     except KeyError:
+#         raise KeyError(f"no auth method with name {method_name!r}") from None
+#
+#
+# def load_auth_method(data: aiowamp.WAMPDict) -> SerializableAuthMethodABC:
+#     try:
+#         method_name = data["method"]
+#     except KeyError:
+#         raise TypeError(f"data doesn't contain method name: {data!r}") from None
+#
+#     return get_auth_method(method_name).load(data)
 
 
 class CRAuth(AuthMethodABC):
@@ -164,3 +203,20 @@ class ScramAuth(AuthMethodABC):
     @property
     def auth_extra(self) -> aiowamp.WAMPDict:
         return {"nonce": "", "channel_binding": None}
+
+# def _get_value(d: Mapping, key: str, *,
+#                typ: type = None,
+#                default: Any = None) -> Any:
+#     try:
+#         value = d[key]
+#     except KeyError:
+#         if default is not None:
+#             return default
+#
+#         raise TypeError(f"expected {key!r} to be present in {d}") from None
+#
+#     if not isinstance(value, typ):
+#         raise TypeError(f"expected value of {key!r} to be {typ.__qualname__}, "
+#                         f"got {type(value).__qualname__}")
+#
+#     return value

@@ -69,7 +69,7 @@ def make_dummy_invocation(msg: aiowamp.msg.Invocation = None, procedure: str = "
     details = details or {"receive_progress": progress}
     msg = msg or aiowamp.msg.Invocation(0, 0, details, args, kwargs)
     return aiowamp.Invocation(session or make_dummy_session(session_details), msg,
-                              procedure=aiowamp.URI(procedure))
+                              procedure=aiowamp.URI.as_uri(procedure))
 
 
 def get_transport_from_invocation(i: aiowamp.InvocationABC) -> DummyTransport:
