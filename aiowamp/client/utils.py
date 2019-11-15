@@ -21,7 +21,7 @@ def check_message_response(msg: aiowamp.MessageABC, ok_type: Type[MsgT]) -> MsgT
 
     error = aiowamp.message_as_type(msg, aiowamp.msg.Error)
     if error:
-        raise aiowamp.create_error_response(error)
+        raise aiowamp.error_to_exception(error)
 
     raise aiowamp.UnexpectedMessageError(msg, ok_type)
 

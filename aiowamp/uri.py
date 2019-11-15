@@ -145,6 +145,11 @@ of a call, call result, call error or publish, and the payload did not conform
 to the requirements.
 """
 
+RUNTIME_ERROR = URI("wamp.error.runtime_error")
+"""
+THIS ISN'T PART OF THE WAMP PROTOCOL.
+"""
+
 # Session Close
 
 

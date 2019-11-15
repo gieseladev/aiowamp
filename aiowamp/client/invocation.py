@@ -5,10 +5,10 @@ import asyncio
 import contextlib
 import inspect
 import logging
-from typing import AsyncGenerator, Awaitable, Callable, Coroutine, Mapping, Optional, Tuple
+from typing import AsyncGenerator, Awaitable, Callable, Coroutine, Generic, Mapping, Optional, Tuple, TypeVar, Union
 
 import aiowamp
-from .abstract import InvocationABC
+from .abstract import ClientABC, InvocationABC
 
 __all__ = ["Invocation",
            "ProcedureRunnerABC", "CoroRunner", "AsyncGenRunner",
@@ -16,15 +16,20 @@ __all__ = ["Invocation",
 
 log = logging.getLogger(__name__)
 
+ClientT = TypeVar("ClientT", bound=ClientABC)
 
-class Invocation(InvocationABC):
+
+class Invocation(InvocationABC[ClientT], Generic[ClientT]):
     __slots__ = ("session",
+                 "__client",
                  "__done", "__interrupt",
                  "__procedure", "__request_id",
                  "__args", "__kwargs", "__details")
 
     session: aiowamp.SessionABC
     """Session used to send messages."""
+
+    __client: ClientT
 
     __done: bool
     __interrupt: Optional[aiowamp.Interrupt]
@@ -36,7 +41,7 @@ class Invocation(InvocationABC):
     __kwargs: aiowamp.WAMPDict
     __details: aiowamp.WAMPDict
 
-    def __init__(self, session: aiowamp.SessionABC, msg: aiowamp.msg.Invocation, *,
+    def __init__(self, session: aiowamp.SessionABC, client: ClientT, msg: aiowamp.msg.Invocation, *,
                  procedure: aiowamp.URI) -> None:
         """Create a new invocation instance.
 
@@ -50,6 +55,8 @@ class Invocation(InvocationABC):
             procedure: Registered procedure URI.
         """
         self.session = session
+        self.__client = client
+
         self.__done = False
         self.__interrupt = None
 
@@ -59,6 +66,26 @@ class Invocation(InvocationABC):
         self.__args = tuple(msg.args) if msg.args else ()
         self.__kwargs = msg.kwargs or {}
         self.__details = msg.details
+
+    def __getitem__(self, key: Union[int, str]) -> aiowamp.WAMPType:
+        try:
+            return super().__getitem__(key)
+        except LookupError as e:
+            if isinstance(key, int):
+                msg = f"expected {key + 1} arguments, got {len(self)}"
+            else:
+                msg = f"missing keyword argument {key!r}"
+
+            aiowamp.set_invocation_error(e, aiowamp.InvocationError(
+                aiowamp.uri.INVALID_ARGUMENT,
+                msg,
+                kwargs={"key": key},
+            ))
+            raise e from None
+
+    @property
+    def client(self) -> ClientT:
+        return self.__client
 
     @property
     def request_id(self) -> int:
@@ -238,9 +265,9 @@ class ProcedureRunnerABC(Awaitable[None], abc.ABC):
             log.debug("%s: already done, not sending error: %r", self, e)
             return
 
-        # TODO convert exception to error
-        log.debug("%s: sending error: %r", self, e)
-        await self.invocation.send_error(aiowamp.uri.INVALID_ARGUMENT)
+        err = aiowamp.exception_to_invocation_error(e)
+        log.debug("%s: sending error: %r", self, err)
+        await self.invocation.send_error(err.uri, *err.args or (), kwargs=err.kwargs, details=err.details)
 
     async def _send_progress(self, result: aiowamp.InvocationHandlerResult) -> None:
         """Send a progress message if the invocation isn't already done.

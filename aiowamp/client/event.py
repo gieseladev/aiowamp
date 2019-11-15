@@ -1,22 +1,21 @@
 from __future__ import annotations
 
-from typing import Tuple
+from typing import Generic, Tuple, TypeVar
 
 import aiowamp
-from .abstract import SubscriptionEventABC
+from .abstract import ClientABC, SubscriptionEventABC
 
 __all__ = ["SubscriptionEvent"]
 
+ClientT = TypeVar("ClientT", bound=ClientABC)
 
-# TODO subscriptionevent and invocation should expose the underlying client.
 
-
-class SubscriptionEvent(SubscriptionEventABC):
+class SubscriptionEvent(SubscriptionEventABC[ClientT], Generic[ClientT]):
     __slots__ = ("__client",
                  "__topic", "__publication_id",
                  "__args", "__kwargs", "__details")
 
-    __client: aiowamp.ClientABC
+    __client: ClientT
 
     __topic: aiowamp.URI
     __publication_id: int
@@ -25,7 +24,7 @@ class SubscriptionEvent(SubscriptionEventABC):
     __kwargs: aiowamp.WAMPDict
     __details: aiowamp.WAMPDict
 
-    def __init__(self, client: aiowamp.ClientABC, msg: aiowamp.msg.Event, *,
+    def __init__(self, client: ClientT, msg: aiowamp.msg.Event, *,
                  topic: aiowamp.URI) -> None:
         """Create a new SubscriptionEven instance.
 
@@ -46,6 +45,10 @@ class SubscriptionEvent(SubscriptionEventABC):
         self.__args = tuple(msg.args) if msg.args else ()
         self.__kwargs = msg.kwargs or {}
         self.__details = msg.details
+
+    @property
+    def client(self) -> ClientT:
+        return self.__client
 
     @property
     def publication_id(self) -> int:

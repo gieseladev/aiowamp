@@ -3,6 +3,8 @@ from typing import Any, List
 
 import aiowamp
 
+CLOSE_SENTINEL = object()
+
 
 class DummyTransport(aiowamp.TransportABC):
     receive_queue: asyncio.Queue
@@ -21,6 +23,7 @@ class DummyTransport(aiowamp.TransportABC):
     async def close(self) -> None:
         assert not self._closed, "already closed"
         self._closed = True
+        self.receive_queue.put_nowait(CLOSE_SENTINEL)
 
     async def send(self, msg: aiowamp.MessageABC) -> None:
         assert not self._closed, "already closed"
@@ -33,7 +36,11 @@ class DummyTransport(aiowamp.TransportABC):
 
     async def recv(self) -> aiowamp.MessageABC:
         assert not self._closed, "already closed"
-        return await self.receive_queue.get()
+        msg = await self.receive_queue.get()
+        if msg is CLOSE_SENTINEL:
+            raise Exception("closed")
+
+        return msg
 
 
 def make_dummy_session(details: aiowamp.WAMPDict = None) -> aiowamp.Session:
@@ -68,7 +75,11 @@ def make_dummy_invocation(msg: aiowamp.msg.Invocation = None, procedure: str = "
                           session: aiowamp.SessionABC = None) -> aiowamp.Invocation:
     details = details or {"receive_progress": progress}
     msg = msg or aiowamp.msg.Invocation(0, 0, details, args, kwargs)
-    return aiowamp.Invocation(session or make_dummy_session(session_details), msg,
+
+    session = session or make_dummy_session(session_details)
+    # client is None so we can avoid having to cleanup...
+    # it's not great, but it works for now
+    return aiowamp.Invocation(session, None, msg,
                               procedure=aiowamp.URI.as_uri(procedure))
 
 

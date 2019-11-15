@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-from typing import AsyncIterator, Awaitable, Dict, Optional, TypeVar, Tuple
+from typing import AsyncIterator, Awaitable, Dict, Optional, Tuple, TypeVar
 
 import aiowamp
 from .abstract import ClientABC
@@ -66,7 +66,7 @@ class Client(ClientABC):
             log.warning("%s: received invocation for unknown registration: %r", self, invocation_msg)
             return
 
-        invocation = aiowamp.Invocation(self.session, invocation_msg, procedure=uri)
+        invocation = aiowamp.Invocation(self.session, self, invocation_msg, procedure=uri)
 
         try:
             runner = runner_factory(invocation)
@@ -168,15 +168,22 @@ class Client(ClientABC):
             with contextlib.suppress(KeyError):
                 del self.__awaiting_reply[req_id]
 
-    def _cleanup(self) -> None:
+    async def _cleanup(self) -> None:
         exc = aiowamp.ClientClosed()
+        self.session.message_handler.off(callback=self.__handle_message)
 
         self.__procedure_ids.clear()
         self.__procedures.clear()
 
+        coros = []
         for procedure in self.__running_procedures.values():
-            # TODO kill procedure
-            pass
+            coro = procedure.interrupt(aiowamp.Interrupt({
+                "mode": aiowamp.CANCEL_KILL_NO_WAIT
+            }))
+            coros.append(coro)
+
+        await asyncio.gather(*coros)
+
         self.__running_procedures.clear()
 
         self.__sub_handlers.clear()
@@ -195,7 +202,7 @@ class Client(ClientABC):
         try:
             await self.session.close(details, reason=reason)
         finally:
-            self._cleanup()
+            await self._cleanup()
 
     def get_registration_id(self, procedure: str) -> Optional[int]:
         """Get the id of the registration for the given procedure.

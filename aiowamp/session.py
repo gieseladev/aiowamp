@@ -211,6 +211,11 @@ class Session(SessionABC):
         await goodbye_fut
         await self.transport.close()
 
+        try:
+            await self.__receive_task
+        except Exception:
+            log.exception("receive loop raised exception")
+
     def has_role(self, role: str) -> bool:
         # faster than `role in set(self.__roles)`
         return role in self.__roles

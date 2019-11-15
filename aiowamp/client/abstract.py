@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import abc
-from typing import Any, AsyncGenerator, AsyncIterator, Awaitable, Callable, ClassVar, Iterator, Mapping, Optional, \
-    Sequence, Tuple, TypeVar, Union, overload
+from typing import Any, AsyncGenerator, AsyncIterator, Awaitable, Callable, ClassVar, Generic, Iterator, Mapping, \
+    Optional, Sequence, Tuple, TypeVar, Union, overload
 
 import aiowamp
 
@@ -80,7 +80,7 @@ class ArgsMixin:
         """
         try:
             return self[key]
-        except (KeyError, IndexError):
+        except LookupError:
             return default
 
 
@@ -138,12 +138,19 @@ If a progress handler returns an awaitable object, it is awaited.
 The return value is ignored.
 """
 
+ClientT = TypeVar("ClientT", bound="aiowamp.ClientABC")
 
-class InvocationABC(ArgsMixin, abc.ABC):
+
+class InvocationABC(ArgsMixin, abc.ABC, Generic[ClientT]):
     __slots__ = ()
 
     def __str__(self) -> str:
         return f"{type(self).__qualname__} {self.request_id}"
+
+    @property
+    @abc.abstractmethod
+    def client(self) -> ClientT:
+        ...
 
     @property
     @abc.abstractmethod
@@ -405,11 +412,16 @@ class CallABC(Awaitable[InvocationResult], AsyncIterator[InvocationProgress], ab
         ...
 
 
-class SubscriptionEventABC(ArgsMixin, abc.ABC):
+class SubscriptionEventABC(ArgsMixin, abc.ABC, Generic[ClientT]):
     __slots__ = ()
 
     def __str__(self) -> str:
         return f"{type(self).__qualname__} {self.publication_id}"
+
+    @property
+    @abc.abstractmethod
+    def client(self) -> ClientT:
+        ...
 
     @property
     @abc.abstractmethod
