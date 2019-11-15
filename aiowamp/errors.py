@@ -5,7 +5,8 @@ import logging
 from typing import Callable, Dict, Optional, Type
 
 import aiowamp
-from .uri_map import URIMap
+from aiowamp.args_mixin import ArgsMixin
+from aiowamp.uri_map import URIMap
 
 __all__ = ["Error",
            "TransportError",
@@ -74,34 +75,39 @@ class UnexpectedMessageError(InvalidMessage):
         return f"received message {self.received!r} but expected message of type {self.expected.__qualname__}"
 
 
-class ErrorResponse(Error):
-    __slots__ = ("message",)
+class ErrorResponse(Error, ArgsMixin):
+    __slots__ = ("message",
+                 "uri", "args", "kwargs", "details")
 
     message: aiowamp.msg.Error
     """Error message."""
 
+    uri: aiowamp.URI
+    details: aiowamp.WAMPDict
+
     def __init__(self, message: aiowamp.msg.Error):
         self.message = message
+
+        self.uri = message.error
+        self.args = tuple(message.args) if message.args else ()
+        self.kwargs = message.kwargs or {}
+        self.details = message.details
 
     def __repr__(self) -> str:
         return f"{type(self).__qualname__}({self.message!r})"
 
     def __str__(self) -> str:
-        s = f"{self.message.error}"
+        s = f"{self.uri}"
 
-        args_str = ", ".join(map(repr, self.message.args))
+        args_str = ", ".join(map(repr, self.args))
         if args_str:
             s += f" {args_str}"
 
-        kwargs_str = ", ".join(f"{k}={v!r}" for k, v in self.message.kwargs.items())
+        kwargs_str = ", ".join(f"{k}={v!r}" for k, v in self.kwargs.items())
         if kwargs_str:
             s += f" ({kwargs_str})"
 
         return s
-
-    @property
-    def uri(self) -> aiowamp.URI:
-        return self.message.error
 
 
 ErrorFactory = Callable[["aiowamp.msg.Error"], Exception]
