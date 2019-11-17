@@ -15,6 +15,8 @@ __all__ = ["Client"]
 log = logging.getLogger(__name__)
 
 
+# TODO allow URI.match_policy to be set.
+
 class Client(ClientABC):
     __slots__ = ("session", "id_gen",
                  "__awaiting_reply", "__ongoing_calls", "__running_procedures",

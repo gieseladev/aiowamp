@@ -189,6 +189,7 @@ def _create_msg_cls(name: str, message_type: int,
     )
 
     loc = {}
+    # TODO do we need to pass globals here?
     exec(code, globals(), loc)
 
     return loc[name]
