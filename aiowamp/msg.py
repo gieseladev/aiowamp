@@ -157,7 +157,8 @@ class {name}(aiowamp.MessageABC):
 
 def _create_msg_cls(name: str, message_type: int,
                     attrs: Iterable[str],
-                    optional_attrs: Iterable[str]) -> Type[aiowamp.MessageABC]:
+                    optional_attrs: Iterable[str], *,
+                    globalns: dict = None) -> Type[aiowamp.MessageABC]:
     attrs, optional_attrs = list(map(Attr.parse, attrs)), list(map(Attr.parse, optional_attrs))
     all_attrs = [*attrs, *optional_attrs]
 
@@ -189,13 +190,14 @@ def _create_msg_cls(name: str, message_type: int,
     )
 
     loc = {}
-    # TODO do we need to pass globals here?
-    exec(code, globals(), loc)
+    exec(code, globalns, loc)
 
     return loc[name]
 
 
 def _create_msgs():
+    globalns = {"aiowamp": aiowamp}
+
     for msg in MSGS:
         if len(msg) == 3:
             name, message_type, attrs = msg
@@ -205,7 +207,8 @@ def _create_msgs():
         else:
             raise ValueError("Invalid amount of values")
 
-        cls = _create_msg_cls(name, message_type, attrs, optional_attrs)
+        cls = _create_msg_cls(name, message_type, attrs, optional_attrs,
+                              globalns=globalns)
         globals()[name] = cls
         __all__.append(name)
 
@@ -215,11 +218,10 @@ def _create_msgs():
 _create_msgs()
 
 # clean the globals
-
 # because key is defined here, it will be deleted by the code below
 key = None
 for key in tuple(globals()):
-    if key.endswith("__") or key in __all__ or key == "aiowamp":
+    if key == "__all__" or key in __all__:
         continue
 
     del globals()[key]
