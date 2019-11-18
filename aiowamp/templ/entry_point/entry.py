@@ -1,6 +1,5 @@
 import abc
 import inspect
-import types
 from typing import Any, Callable, Iterable, List, Optional, get_type_hints
 
 import aiowamp
@@ -9,9 +8,7 @@ from .args import CommonArg, KWArg, VarKWArg, args_from_signature
 from .code import Code, indent
 
 __all__ = ["CommonEntryPoint",
-           "ProcedureEntryPoint", "EventEntryPoint",
-           "copy_entry_point",
-           "change_wrapped_function"]
+           "ProcedureEntryPoint", "EventEntryPoint"]
 
 
 def class_and_subclass(cls, o) -> bool:
@@ -55,9 +52,12 @@ class CommonEntryPoint(Code):
     @property
     def entry_point_fn_name(self) -> str:
         try:
-            name = self.fn.__name__
+            name: str = self.fn.__name__
         except AttributeError:
             name = WRAPPED_FUNC_NAME
+
+        if not name.isidentifier():
+            name = "anonymous"
 
         return f"{name}_entry_point"
 
@@ -149,17 +149,3 @@ class EventEntryPoint(CommonEntryPoint):
 
     def run_fn_code(self) -> str:
         return f"await {self.fn_call_line()}"
-
-
-def copy_entry_point(entry: types.FunctionType) -> Callable:
-    return types.FunctionType(entry.__code__, entry.__globals__.copy(),
-                              name=entry.__name__,
-                              closure=entry.__closure__)
-
-
-def change_wrapped_function(entry: Any, new: Callable) -> None:
-    globalns = entry.__globals__
-    if WRAPPED_FUNC_NAME not in globalns:
-        raise KeyError("function doesn't appear to be an entry point")
-
-    globalns[WRAPPED_FUNC_NAME] = new

@@ -10,7 +10,7 @@ setuptools.setup(
     version=aiowamp.__version__,
     author=aiowamp.__author__,
     author_email="team@giesela.dev",
-    url="https://github.com/gieseladev/wampio",
+    url="https://github.com/gieseladev/aiowamp",
 
     licence="MIT",
     long_description=long_description,
