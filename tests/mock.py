@@ -58,7 +58,11 @@ def get_transport_from_session(s: aiowamp.SessionABC) -> DummyTransport:
 
 def make_dummy_client(session: aiowamp.SessionABC = None, *,
                       session_details: aiowamp.WAMPDict = None) -> aiowamp.Client:
-    return aiowamp.Client(session or make_dummy_session(session_details))
+    c = aiowamp.Client(session or make_dummy_session(session_details))
+    # The client automatically starts the session's receive loop.
+    # This stops the receive loop so we don't have to clean up afterwards.
+    del c.session.message_handler
+    return c
 
 
 def get_transport_from_client(c: aiowamp.ClientABC) -> DummyTransport:
@@ -76,10 +80,8 @@ def make_dummy_invocation(msg: aiowamp.msg.Invocation = None, procedure: str = "
     details = details or {"receive_progress": progress}
     msg = msg or aiowamp.msg.Invocation(0, 0, details, args, kwargs)
 
-    session = session or make_dummy_session(session_details)
-    # client is None so we can avoid having to cleanup...
-    # it's not great, but it works for now
-    return aiowamp.Invocation(session, None, msg,
+    client = make_dummy_client(session, session_details=session_details)
+    return aiowamp.Invocation(client.session, client, msg,
                               procedure=aiowamp.URI.as_uri(procedure))
 
 
@@ -88,16 +90,35 @@ def get_transport_from_invocation(i: aiowamp.InvocationABC) -> DummyTransport:
     return get_transport_from_session(i.session)
 
 
+def make_dummy_subscription_event(msg: aiowamp.msg.Invocation = None, topic: str = "test_procedure", *,
+                                  details: aiowamp.WAMPDict = None,
+                                  args: aiowamp.WAMPList = None,
+                                  kwargs: aiowamp.WAMPDict = None,
+                                  session_details: aiowamp.WAMPDict = None,
+                                  session: aiowamp.SessionABC = None) -> aiowamp.SubscriptionEvent:
+    details = details or {}
+    msg = msg or aiowamp.msg.Event(0, 0, details, args, kwargs)
+
+    return aiowamp.SubscriptionEvent(make_dummy_client(session, session_details=session_details), msg,
+                                     topic=aiowamp.URI.as_uri(topic))
+
+
+def get_transport_from_subscription_event(e: aiowamp.SubscriptionEventABC) -> DummyTransport:
+    assert isinstance(e, aiowamp.SubscriptionEvent)
+    return get_transport_from_client(e.client)
+
+
 def get_transport(o: Any) -> DummyTransport:
     if isinstance(o, DummyTransport): return o
     if isinstance(o, aiowamp.SessionABC): return get_transport_from_session(o)
     if isinstance(o, aiowamp.ClientABC): return get_transport_from_client(o)
     if isinstance(o, aiowamp.InvocationABC): return get_transport_from_invocation(o)
+    if isinstance(o, aiowamp.SubscriptionEventABC): return get_transport_from_subscription_event(o)
 
     raise TypeError("can't get dummy transport", o)
 
 
-def send_message(o: Any, *msgs: aiowamp.MessageABC):
+def mock_receive_message(o: Any, *msgs: aiowamp.MessageABC):
     get_transport(o).mock_receive(*msgs)
 
 

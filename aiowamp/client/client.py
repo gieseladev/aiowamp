@@ -16,6 +16,8 @@ log = logging.getLogger(__name__)
 
 
 # TODO allow URI.match_policy to be set.
+# TODO add client shutdown which removes all subs/procedures and waits for all
+#   pending tasks to finish before closing.
 
 class Client(ClientABC):
     __slots__ = ("session", "id_gen",
@@ -32,6 +34,8 @@ class Client(ClientABC):
     __ongoing_calls: Dict[int, aiowamp.Call]
     __running_procedures: Dict[int, ProcedureRunnerABC]
 
+    # TODO can have multiple procedures with the same uri
+    # TODO same for subs
     __procedure_ids: Dict[aiowamp.URI, int]
     __procedures: Dict[int, Tuple[RunnerFactory, aiowamp.URI]]
 
@@ -217,12 +221,16 @@ class Client(ClientABC):
         """
         return self.__procedure_ids.get(aiowamp.URI.as_uri(procedure))
 
-    async def register(self, procedure: str, handler: aiowamp.InvocationHandler, *, disclose_caller: bool = None,
+    async def register(self, procedure: str, handler: aiowamp.InvocationHandler, *,
+                       disclose_caller: bool = None,
                        match_policy: aiowamp.MatchPolicy = None,
                        invocation_policy: aiowamp.InvocationPolicy = None,
                        options: aiowamp.WAMPDict = None) -> None:
         # get runner factory up here already to catch errors early
         runner = get_runner_factory(handler)
+
+        if disclose_caller is not None:
+            options = _set_value(options, "disclose_caller", disclose_caller)
 
         if match_policy is not None:
             options = _set_value(options, "match", match_policy)

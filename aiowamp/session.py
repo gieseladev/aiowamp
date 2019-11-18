@@ -147,6 +147,13 @@ class Session(SessionABC):
 
         return self.__message_handler
 
+    @message_handler.deleter
+    def message_handler(self) -> None:
+        if self.__receive_task:
+            self.__receive_task.cancel()
+
+        self.__message_handler = None
+
     def __receive_loop_running(self) -> bool:
         return bool(self.__receive_task and not self.__receive_task.done())
 

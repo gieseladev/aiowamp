@@ -5,13 +5,16 @@ import asyncio
 import contextlib
 import inspect
 import logging
-from typing import AsyncGenerator, Awaitable, Callable, Coroutine, Generic, Mapping, Optional, Tuple, TypeVar, Union
+import warnings
+from typing import Any, AsyncGenerator, Awaitable, Callable, Coroutine, Generic, Mapping, Optional, Tuple, Type, \
+    TypeVar, Union
 
 import aiowamp
 from .abstract import ClientABC, InvocationABC
 
 __all__ = ["Invocation",
            "ProcedureRunnerABC", "CoroRunner", "AsyncGenRunner",
+           "get_fn_runner_cls", "get_obj_runner_cls",
            "get_runner_factory"]
 
 log = logging.getLogger(__name__)
@@ -445,7 +448,9 @@ class AsyncGenRunner(ProcedureRunnerABC):
         if self.invocation.done:
             return
 
-        log.warning("%s: returned no final result, sending an empty an empty result.", self.invocation)
+        warnings.warn("returned no final result, sending an empty an empty result.\n"
+                      "Final yield MUST NOT be an instance of aiowamp.InvocationProgress!",
+                      SyntaxWarning)
         await self.invocation.send_result()
 
     async def _run(self) -> None:
@@ -494,33 +499,47 @@ class AwaitableRunner(ProcedureRunnerABC):
 RunnerFactory = Callable[[InvocationABC], ProcedureRunnerABC]
 
 
+def get_fn_runner_cls(handler: aiowamp.InvocationHandler) -> Optional[Type[ProcedureRunnerABC]]:
+    if inspect.iscoroutinefunction(handler):
+        return CoroRunner
+
+    if inspect.isasyncgenfunction(handler):
+        return AsyncGenRunner
+
+    return None
+
+
+def get_obj_runner_cls(value: Any) -> Type[ProcedureRunnerABC]:
+    if inspect.iscoroutine(value):
+        return CoroRunner
+
+    if inspect.isasyncgen(value):
+        return AsyncGenRunner
+
+    if inspect.isawaitable(value):
+        return AwaitableRunner
+
+    raise TypeError(f"unsupported type: {type(value).__qualname__}.\n"
+                    "Function must return a coroutine, async generator, or awaitable object.")
+
+
 def make_lazy_factory(handler: aiowamp.InvocationHandler) -> RunnerFactory:
     def factory(invocation: InvocationABC):
         # TODO should this really bubble to the client level?
         res = handler(invocation)
+        cls = get_obj_runner_cls(res)
 
-        if inspect.iscoroutine(res):
-            return CoroRunner(invocation, res)
+        # TODO treat res on typeerror as result, maybe simply return this and
+        #  let the caller handle it
 
-        if inspect.isasyncgen(res):
-            return AsyncGenRunner(invocation, res)
-
-        if inspect.isawaitable(res):
-            return AwaitableRunner(invocation, res)
-
-        # TODO treat as result, maybe simply return this and let the client
-        #  handle it
-
-        raise TypeError(f"invocation handler {handler!r} returned unsupported type: {type(res).__qualname__}")
+        return cls(invocation, res)
 
     return factory
 
 
 def get_runner_factory(handler: aiowamp.InvocationHandler) -> RunnerFactory:
-    if inspect.iscoroutinefunction(handler):
-        return lambda i: CoroRunner(i, handler(i))
-
-    if inspect.isasyncgenfunction(handler):
-        return lambda i: AsyncGenRunner(i, handler(i))
+    cls = get_fn_runner_cls(handler)
+    if cls:
+        return lambda i: cls(i, handler(i))
 
     return make_lazy_factory(handler)

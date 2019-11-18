@@ -1,4 +1,5 @@
 import setuptools
+
 import aiowamp
 
 with open("README.md", "r") as f:
@@ -21,7 +22,7 @@ setuptools.setup(
         "websockets",
     ],
 
-    packages=setuptools.find_packages(exclude=("docs", "tests")),
+    packages=setuptools.find_packages(exclude=("docs", "examples", "tests")),
     package_data={
         "": ["py.typed", "*.pyi"],
     },

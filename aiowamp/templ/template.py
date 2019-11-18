@@ -1,17 +1,17 @@
 import asyncio
-import inspect
+import types
 import urllib.parse as urlparse
-from typing import Any, Awaitable, Callable, Iterable, List, Optional, Tuple, TypeVar, Union
+from typing import Any, Awaitable, Callable, Iterable, List, Optional, TypeVar, Union
 
 import aiowamp
-from .handler import Handler, create_registration_handler, create_subscription_handler, get_handlers, \
+from .handler import Handler, create_registration_handler, create_subscription_handler, get_handlers_in_instance, \
     set_registration_handler, set_subscription_handler
 
 __all__ = ["Template",
            "procedure", "event",
            "apply_template"]
 
-FuncT = TypeVar("FuncT", bound=Callable)
+FuncT = TypeVar("FuncT", bound=Union[Callable, types.MethodDescriptorType])
 NoOpDecorator = Callable[[FuncT], FuncT]
 
 
@@ -44,23 +44,47 @@ class Template:
 
         self._uri_prefix = uri_prefix if uri_prefix else None
 
-    def _get_registration_handlers(self, uri: str) -> Tuple[Handler, ...]:
-        return tuple(handler for handler in self.__registrations if handler.uri == uri)
+    def _iter_registration_handlers(self, uri: str) -> Iterable[Handler]:
+        return (handler for handler in self.__registrations if handler.uri == uri)
+
+    def __assert_invocation_policy(self, uri: str, policy: aiowamp.InvocationPolicy = None) \
+            -> Optional[aiowamp.InvocationPolicy]:
+        handlers = tuple(self._iter_registration_handlers(uri))
+        if not handlers:
+            return policy
+
+        if policy is aiowamp.INVOKE_SINGLE:
+            raise TypeError(f"there are multiple procedures for the uri {uri}. "
+                            f"Invocation policy must something other than {aiowamp.INVOKE_SINGLE!r}")
+
+        policies = tuple(handler.get_option("invoke")
+                         for handler in handlers)
+
+        if aiowamp.INVOKE_SINGLE in policies:
+            raise ValueError(f"procedure with uri {uri} already exists and "
+                             f"explicitly uses invocation policy {aiowamp.INVOKE_SINGLE!r}")
+
+        if policy is None:
+            policy = aiowamp.INVOKE_ROUND_ROBIN
+
+        for handler, h_policy in zip(handlers, policy):
+            if h_policy is None:
+                handler.set_option("invoke", policy)
+
+        return policy
 
     def procedure(self, uri: str = None, *,
                   disclose_caller: bool = None,
                   match_policy: aiowamp.MatchPolicy = None,
                   invocation_policy: aiowamp.InvocationPolicy = None,
                   options: aiowamp.WAMPDict = None) -> NoOpDecorator:
+        if uri is not None:
+            invocation_policy = self.__assert_invocation_policy(uri, invocation_policy or options.get("invoke"))
+
         options = build_options(options,
                                 disclose_caller=disclose_caller,
-                                match_policy=match_policy,
-                                invocation_policy=invocation_policy)
-
-        if uri is not None:
-            existing_handlers = self._get_registration_handlers(uri)
-            # TODO make sure handler is set to allow multiple registrations for the same URI
-            #      automatically set them and raise an error if the values are explicitly disabled.
+                                match=match_policy,
+                                invoke=invocation_policy)
 
         def decorator(fn):
             handler = create_registration_handler(uri, fn, options)
@@ -73,11 +97,11 @@ class Template:
               match_policy: aiowamp.MatchPolicy = None,
               options: aiowamp.WAMPDict = None) -> NoOpDecorator:
         options = build_options(options,
-                                match_policy=match_policy)
+                                match=match_policy)
 
         def decorator(fn):
             handler = create_subscription_handler(uri, fn, options)
-            self.__registrations.append(handler)
+            self.__subscriptions.append(handler)
             return fn
 
         return decorator
@@ -106,8 +130,8 @@ def procedure(uri: str = None, *,
               options: aiowamp.WAMPDict = None) -> NoOpDecorator:
     options = build_options(options,
                             disclose_caller=disclose_caller,
-                            match_policy=match_policy,
-                            invocation_policy=invocation_policy)
+                            match=match_policy,
+                            invoke=invocation_policy)
 
     def decorator(fn):
         handler = create_registration_handler(uri, fn, options)
@@ -122,7 +146,7 @@ def event(uri: str, *,
           match_policy: aiowamp.MatchPolicy = None,
           options: aiowamp.WAMPDict = None) -> NoOpDecorator:
     options = build_options(options,
-                            match_policy=match_policy)
+                            match=match_policy)
 
     def decorator(fn):
         handler = create_subscription_handler(uri, fn, options)
@@ -135,12 +159,12 @@ def event(uri: str, *,
 
 def __apply_registrations(client: aiowamp.ClientABC, handlers: Iterable[Handler], *,
                           uri_prefix: str = None) -> Iterable[Awaitable]:
-    return (client.register(handler.uri_with_prefix(uri_prefix), handler.entry_point, options=handler.options)
+    return (client.register(handler.uri_with_prefix(uri_prefix), handler.get_entry_point(), options=handler.options)
             for handler in handlers)
 
 
 def __apply_subscriptions(client: aiowamp.ClientABC, handlers: Iterable[Handler]) -> Iterable[Awaitable]:
-    return (client.subscribe(handler.uri, handler.entry_point, options=handler.options)
+    return (client.subscribe(handler.uri, handler.get_entry_point(), options=handler.options)
             for handler in handlers)
 
 
@@ -157,18 +181,6 @@ async def apply_template(template: Any, client: aiowamp.ClientABC, *,
         await template.apply(client)
         return
 
-    registrations = []
-    subscriptions = []
-
-    for _, value in inspect.getmembers(template, inspect.ismethod):
-        reg, sub = get_handlers(value)
-        if reg is not None:
-            registrations.append(reg)
-
-        if sub is not None:
-            subscriptions.append(sub)
-
-    if not (registrations or subscriptions):
-        raise TypeError(f"{template!r} doesn't have any procedures or event listeners")
+    registrations, subscriptions = get_handlers_in_instance(template)
 
     await _apply_handlers(client, registrations, subscriptions, uri_prefix=uri_prefix)

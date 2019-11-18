@@ -25,7 +25,8 @@ async def total_sum(*values: float, start: float = 0.) -> float:
 
 
 @template.event("some.other.result")
-async def on_result(client: aiowamp.ClientABC, weights: List[int]) -> None:
+async def on_result(event: aiowamp.SubscriptionEventABC, weights: List[int]) -> None:
+    client = event.client
     total_weight, = await client.call("std.math.total_sum", *weights)
 
     average_weight, = await client.call("std.math.divide", total_weight, len(weights),
@@ -49,7 +50,10 @@ async def main() -> None:
 
     import random
 
-    await client.publish("some.other.result", [random.randrange(500) for _ in range(10)])
+    await client.publish("some.other.result", [random.randrange(500) for _ in range(10)],
+                         exclude_me=False)
+
+    await asyncio.sleep(5)
 
     await client.close()
 
