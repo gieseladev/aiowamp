@@ -66,6 +66,7 @@ jobs:
     steps:
       - name: Add symbolic link for mingw64
         run: mklink /d C:\MinGW64 C:\Program Files\Git\mingw64
+        shell: cmd
 
       - uses: actions/checkout@v1
 
