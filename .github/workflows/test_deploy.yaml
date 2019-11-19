@@ -75,8 +75,8 @@ jobs:
           pipenv install --dev --deploy
 
       - run: |
-        where.exe gcc.exe
-        gcc.exe --version
+          where.exe gcc.exe
+          gcc.exe --version
 
       - name: Build distribution
         run: |
