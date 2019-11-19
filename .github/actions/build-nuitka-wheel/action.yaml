@@ -2,12 +2,13 @@ name: "Build Nuitka Wheel"
 description: "Handles building manylinux compatible wheels for Nuitka."
 
 inputs:
-  python-tag:
+  tag:
     description: Python tag to use.
     required: true
+    default: "cp38-cp38"
 
 runs:
   using: "docker"
   image: "Dockerfile"
   args:
-    - ${{ inputs.python-tag }}
+    - ${{ inputs.tag }}

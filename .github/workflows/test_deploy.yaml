@@ -64,9 +64,6 @@ jobs:
           - "3.7"
           - "3.8"
     steps:
-      - name: Install MinGW64
-        run: choco install mingw
-
       - uses: actions/checkout@v1
 
       - name: Setup Python
@@ -76,6 +73,8 @@ jobs:
         run: |
           pip install -U pipenv
           pipenv install --dev --deploy
+
+      - run: echo $env:PATH
 
       - name: Build distribution
         run: pipenv run build_nuitka
@@ -100,7 +99,7 @@ jobs:
       - name: Build distribution
         uses: ./.github/actions/build-nuitka-wheel
         with:
-          python-tag: ${{ matrix.python-version }}
+          tag: ${{ matrix.python-version }}
 
       - uses: actions/upload-artifact@v1
         with:

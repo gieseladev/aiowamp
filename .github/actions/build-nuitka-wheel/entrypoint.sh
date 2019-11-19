@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -e
 
-PYBIN="/opt/python/$1/bin"
+PYBIN="/opt/python/$INPUT_TAG/bin"
 if [[ ! -d "$PYBIN" ]]; then
-  echo "invalid python tag: $1"
+  echo "invalid python tag: $INPUT_TAG"
   exit 1
 fi
 
