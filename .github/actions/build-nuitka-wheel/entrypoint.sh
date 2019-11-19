@@ -1,7 +1,13 @@
 #!/usr/bin/env bash
 set -e
 
-PATH="/opt/python/$1/bin:${PATH}"
+PYBIN="/opt/python/$1/bin"
+if [[ ! -d "$PYBIN" ]]; then
+  echo "invalid python tag: $1"
+  exit 1
+fi
+
+export PATH="${PYBIN}:${PATH}"
 
 pip install --upgrade pipenv
 pipenv install --deploy --dev
