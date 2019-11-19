@@ -74,6 +74,8 @@ jobs:
           pip install -U pipenv
           pipenv install --dev --deploy
 
+      - run: gcc.exe --version
+
       - name: Build distribution
         run: pipenv run build_nuitka
         env:
