@@ -77,7 +77,7 @@ jobs:
       - name: Build distribution
         run: pipenv run build_nuitka
         env:
-          CC: "C:\Program Files\Git\mingw64\bin\gcc.exe"
+          CC: "C:\\Program Files\\Git\\mingw64\\bin\\gcc.exe"
 
       - uses: actions/upload-artifact@v1
         with:
