@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
+set -e
 
-cd "$GITHUB_WORKSPACE" || exit 1
-"$pythonLocation"/pipenv run build_nuitka --dist-dir linx_dist
+python setup.py bdist_nuitka --dist-dir linux_dist
 auditwheel repair linux_dist/*.whl --wheel-dir dist/
