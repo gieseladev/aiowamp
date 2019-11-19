@@ -64,6 +64,9 @@ jobs:
           - "3.7"
           - "3.8"
     steps:
+      - name: Add symbolic link for mingw64
+        run: mklink /d C:\MinGW64 C:\Program Files\Git\mingw64
+
       - uses: actions/checkout@v1
 
       - name: Setup Python
@@ -75,7 +78,7 @@ jobs:
           pipenv install --dev --deploy
 
       - name: Build distribution
-        run: pipenv run -- build_nuitka --mingw64
+        run: pipenv run build_nuitka
 
       - uses: actions/upload-artifact@v1
         with:
