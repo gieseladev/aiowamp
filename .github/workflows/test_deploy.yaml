@@ -112,8 +112,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/actions/download-artifact@v1
-          with:
-            name: dist-standard
+        with:
+          name: dist-standard
 
       - name: Publish distribution to PyPI
         uses: pypa/gh-action-pypi-publish@master
