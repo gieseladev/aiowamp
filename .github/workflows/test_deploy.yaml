@@ -74,12 +74,14 @@ jobs:
           pip install -U pipenv
           pipenv install --dev --deploy
 
-      - run: gcc.exe --version
+      - run: |
+        where.exe gcc.exe
+        gcc.exe --version
 
       - name: Build distribution
-        run: pipenv run build_nuitka
-        env:
-          CC: "C:\\Program Files\\Git\\mingw64\\bin\\gcc.exe"
+        run: |
+          $env:CC = & "where.exe" gcc.exe
+          pipenv run build_nuitka
 
       - uses: actions/upload-artifact@v1
         with:
