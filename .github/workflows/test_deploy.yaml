@@ -31,10 +31,6 @@ jobs:
       - name: Run tests
         run: pipenv run tests
 
-      # only here for testing purposes
-      - name: Build Nuitka distribution
-        uses: ./.github/actions/build-nuitka-wheel
-
   deploy:
     # only deploy on release
     if: github.event_name == 'release'
