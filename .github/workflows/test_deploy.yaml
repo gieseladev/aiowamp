@@ -74,10 +74,8 @@ jobs:
           pip install -U pipenv
           pipenv install --dev --deploy
 
-      - run: echo $env:PATH
-
       - name: Build distribution
-        run: pipenv run build_nuitka
+        run: pipenv run -- build_nuitka --mingw64
 
       - uses: actions/upload-artifact@v1
         with:
