@@ -7,6 +7,7 @@ verify_ssl = true
 pytest = "*"
 pytest-asyncio = "*"
 mypy = "*"
+nuitka = "*"
 
 [packages]
 aiobservable = "*"
@@ -14,7 +15,6 @@ msgpack = "*"
 websockets = "*"
 
 [scripts]
-build = "python setup.py sdist bdist_wheel"
-build_nuitka = "python -m nuitka --warn-unusual-code --lto --module aiowamp --include-package aiowamp --include-package aiobservable"
+build = "python setup.py sdist bdist_wheel bdist_nuitka"
 mypy = "mypy ."
 tests = "python -m pytest"
