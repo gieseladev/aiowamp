@@ -64,14 +64,16 @@ jobs:
           - "3.7"
           - "3.8"
     steps:
+      - name: Install MinGW using Conda
+        run: $CONDA/Scripts/conda install m2w64-gcc
+        shell: bash
+
       - uses: actions/checkout@v1
 
       - name: Setup Python
         uses: actions/setup-python@v1
-
-      - name: Install MinGW using Conda
-        run: $CONDA/Scripts/conda install m2w64-gcc libpython
-        shell: bash
+        with:
+          python-version: ${{ matrix.python-version }}
 
       - name: Install dependencies
         run: |
