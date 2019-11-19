@@ -31,6 +31,10 @@ jobs:
       - name: Run tests
         run: pipenv run tests
 
+      # only here for testing purposes
+      - name: Build Nuitka distribution
+        uses: ./.github/actions/build-nuitka-wheel
+
   deploy:
     # only deploy on release
     if: github.event_name == 'release'
@@ -49,7 +53,10 @@ jobs:
           pipenv install --dev --deploy
 
       - name: Build distribution
-        run: pipenv run build && pipenv run build_nuitka
+        run: pipenv run build
+
+      - name: Build Nuitka distribution
+        uses: ./.github/actions/build-nuitka-wheel
 
       - name: Publish distribution to PyPI
         uses: pypa/gh-action-pypi-publish@master

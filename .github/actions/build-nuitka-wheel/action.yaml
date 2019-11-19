@@ -1,0 +1,6 @@
+name: "Build Nuitka Wheel"
+description: "Handles building manylinux compatible wheels for Nuitka."
+
+runs:
+  using: "docker"
+  image: "Dockerfile"
