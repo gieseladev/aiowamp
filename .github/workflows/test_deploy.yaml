@@ -32,8 +32,6 @@ jobs:
         run: pipenv run tests
 
   deploy:
-    # only deploy on release
-    if: github.event_name == 'release'
     name: Deploy
     needs: test
     runs-on: ubuntu-latest
@@ -49,9 +47,11 @@ jobs:
           pipenv install --dev --deploy
 
       - name: Build distribution
-        run: pipenv run build
+        run: pipenv run build && pipenv run build_nuitka
 
-      - name: Publish distribution to PyPI
+      # only deploy on release
+      - if: github.event_name == 'release'
+        name: Publish distribution to PyPI
         uses: pypa/gh-action-pypi-publish@master
         with:
           user: ${{ secrets.PYPI_USERNAME }}

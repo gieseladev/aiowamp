@@ -15,6 +15,7 @@ msgpack = "*"
 websockets = "*"
 
 [scripts]
-build = "python setup.py sdist bdist_wheel bdist_nuitka"
+build ="python setup.py sdist bdist_wheel"
+build_nuitka = "python setup.py bdist_nuitka"
 mypy = "mypy ."
 tests = "python -m pytest"

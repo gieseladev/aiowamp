@@ -12,7 +12,7 @@ setuptools.setup(
     author_email="team@giesela.dev",
     url="https://github.com/gieseladev/aiowamp",
 
-    licence="MIT",
+    license="MIT",
     long_description=long_description,
     long_description_content_type="text/markdown",
 
