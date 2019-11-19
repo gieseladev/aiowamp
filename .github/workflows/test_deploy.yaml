@@ -32,7 +32,7 @@ jobs:
         run: pipenv run tests
 
   build-standard:
-    name: Build distributables
+    name: Build dist
     needs: test
     runs-on: ubuntu-latest
     steps:
@@ -55,14 +55,14 @@ jobs:
           path: dist
 
   build-windows:
-    name: Build Windows distributables for Python ${{ matrix.python-version }}
+    name: Build Windows dist for Python ${{ matrix.python-version }}
     needs: test
     runs-on: windows-latest
     strategy:
       matrix:
         python-version:
           - "3.7"
-          - "3.8"
+    #          - "3.8"
     steps:
       - name: Install MinGW using Conda
         run: $CONDA/Scripts/conda install m2w64-gcc
@@ -90,7 +90,7 @@ jobs:
           path: dist
 
   build-linux:
-    name: Build Linux distributables for ${{ matrix.python-version }}
+    name: Build Linux dist for ${{ matrix.python-version }}
     needs: test
     runs-on: ubuntu-latest
     strategy:
