@@ -69,19 +69,18 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v1
 
+      - name: Install MinGW using Conda
+        run: $CONDA/Scripts/conda install m2w64-gcc libpython
+        shell: bash
+
       - name: Install dependencies
         run: |
           pip install -U pipenv
           pipenv install --dev --deploy
 
-      - run: |
-          where.exe gcc.exe
-          gcc.exe --version
-
       - name: Build distribution
-        run: |
-          $env:CC = & "where.exe" gcc.exe
-          pipenv run build_nuitka
+        run: CC=$CONDA/Library/mingw-w64/bin/gcc.exe pipenv run build_nuitka
+        shell: bash
 
       - uses: actions/upload-artifact@v1
         with:
