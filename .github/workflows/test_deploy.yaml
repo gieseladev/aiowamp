@@ -31,10 +31,8 @@ jobs:
       - name: Run tests
         run: pipenv run tests
 
-  deploy:
-    # only deploy on release
-    if: github.event_name == 'release'
-    name: Deploy
+  build-standard:
+    name: Build distributables
     needs: test
     runs-on: ubuntu-latest
     steps:
@@ -51,8 +49,71 @@ jobs:
       - name: Build distribution
         run: pipenv run build
 
-      - name: Build Nuitka distribution
+      - uses: actions/upload-artifact@v1
+        with:
+          name: dist-standard
+          path: dist
+
+  build-windows:
+    name: Build Windows distributables for Python ${{ matrix.python-version }}
+    needs: test
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        python-version:
+          - "3.7"
+          - "3.8"
+    steps:
+      - uses: actions/checkout@v1
+
+      - name: Setup Python
+        uses: actions/setup-python@v1
+
+      - name: Install dependencies
+        run: |
+          pip install -U pipenv
+          pipenv install --dev --deploy
+
+      - name: Build distribution
+        run: pipenv run build_nuitka
+
+      - uses: actions/upload-artifact@v1
+        with:
+          name: dist-windows-${{ matrix.python-version }}
+          path: dist
+
+  build-linux:
+    name: Build Linux distributables for ${{ matrix.python-version }}
+    needs: test
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version:
+          - "cp37-cp37m"
+          - "cp38-cp38"
+    steps:
+      - uses: actions/checkout@v1
+
+      - name: Build distribution
         uses: ./.github/actions/build-nuitka-wheel
+        with:
+          python-tag: ${{ matrix.python-version }}
+
+      - uses: actions/upload-artifact@v1
+        with:
+          name: dist-linux-${{ matrix.python-version }}
+          path: dist
+
+  deploy:
+    # only deploy on release
+    if: github.event_name == 'release'
+    name: Deploy
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/actions/download-artifact@v1
+          with:
+            name: dist-standard
 
       - name: Publish distribution to PyPI
         uses: pypa/gh-action-pypi-publish@master
