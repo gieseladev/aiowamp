@@ -54,6 +54,13 @@ jobs:
           name: dist-standard
           path: dist
 
+      - if: github.event_name == 'release'
+        name: Upload to PyPI
+        uses: pypa/gh-action-pypi-publish@master
+        with:
+          user: ${{ secrets.PYPI_USERNAME }}
+          password: ${{ secrets.PYPI_PASSWORD }}
+
   build-windows:
     name: Build Windows dist for Python ${{ matrix.python-version }}
     needs: test
@@ -65,7 +72,7 @@ jobs:
     #          - "3.8"
     steps:
       - name: Install MinGW using Conda
-        run: $CONDA/Scripts/conda install m2w64-gcc
+        run: $CONDA/Scripts/conda install m2w64-gcc libpython
         shell: bash
 
       - uses: actions/checkout@v1
@@ -89,6 +96,14 @@ jobs:
           name: dist-windows-${{ matrix.python-version }}
           path: dist
 
+      - if: github.event_name == 'release'
+        name: Upload to PyPI
+        uses: pypa/gh-action-pypi-publish@master
+        with:
+          user: ${{ secrets.PYPI_USERNAME }}
+          password: ${{ secrets.PYPI_PASSWORD }}
+
+
   build-linux:
     name: Build Linux dist for ${{ matrix.python-version }}
     needs: test
@@ -111,18 +126,8 @@ jobs:
           name: dist-linux-${{ matrix.python-version }}
           path: dist
 
-  deploy:
-    # only deploy on release
-    if: github.event_name == 'release'
-    name: Deploy
-    needs: test
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/actions/download-artifact@v1
-        with:
-          name: dist-standard
-
-      - name: Publish distribution to PyPI
+      - if: github.event_name == 'release'
+        name: Upload to PyPI
         uses: pypa/gh-action-pypi-publish@master
         with:
           user: ${{ secrets.PYPI_USERNAME }}
