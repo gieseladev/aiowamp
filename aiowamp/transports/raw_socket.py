@@ -148,6 +148,8 @@ class RawSocketTransport(aiowamp.TransportABC):
         while not (self.reader.at_eof() or self.reader.exception()):
             try:
                 await self.__read_once()
+            except asyncio.CancelledError:
+                break
             except Exception:
                 log.exception("%s: error while reading once", self)
 
