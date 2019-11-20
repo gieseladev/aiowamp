@@ -67,17 +67,25 @@ class Client(ClientABC):
         try:
             runner_factory, uri = self.__procedures[invocation_msg.registration_id]
         except KeyError:
-            # TODO send error response
             log.warning("%s: received invocation for unknown registration: %r", self, invocation_msg)
+
+            await self.session.send(aiowamp.msg.Error(
+                aiowamp.msg.Invocation.message_type,
+                invocation_msg.request_id,
+                {},
+                aiowamp.uri.INVALID_ARGUMENT,
+                [f"client has no procedure for registration {invocation_msg.registration_id}"]
+            ))
             return
 
         invocation = aiowamp.Invocation(self.session, self, invocation_msg, procedure=uri)
 
         try:
             runner = runner_factory(invocation)
-        except Exception:
-            # TODO send error response
+        except Exception as e:
             log.exception("%s: couldn't start procedure %s", self, runner_factory)
+            err = aiowamp.exception_to_invocation_error(e)
+            await invocation.send_error(err.uri, *err.args, kwargs=err.kwargs)
             return
 
         self.__running_procedures[invocation.request_id] = runner

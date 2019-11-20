@@ -204,6 +204,20 @@ ATTACHED_ERR_KEY = "__invocation_error__"
 
 
 def set_invocation_error(exc: Exception, err: InvocationError) -> None:
+    """Attach an invocation error to an exception.
+
+    This makes it possible to raise a seemingly normal python `Exception` while
+    preserving the additional information for WAMP.
+
+    The attached error can then be retrieved by `exception_to_invocation_error`.
+
+    If the exception is an invocation error, it is overwritten with the new
+    error.
+
+    Args:
+        exc: Exception to attach the invocation error to.
+        err: Invocation error to attach.
+    """
     if isinstance(exc, InvocationError):
         log.info("overwriting %s with %s", exc, err)
         exc._init(err)

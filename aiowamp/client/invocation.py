@@ -525,7 +525,6 @@ def get_obj_runner_cls(value: Any) -> Type[ProcedureRunnerABC]:
 
 def make_lazy_factory(handler: aiowamp.InvocationHandler) -> RunnerFactory:
     def factory(invocation: InvocationABC):
-        # TODO should this really bubble to the client level?
         res = handler(invocation)
         cls = get_obj_runner_cls(res)
 
