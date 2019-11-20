@@ -498,7 +498,7 @@ class ClientABC(abc.ABC):
     @abc.abstractmethod
     async def publish(self, topic: str, *args: aiowamp.WAMPType,
                       kwargs: aiowamp.WAMPDict = None,
-                      acknowledge: bool = True,
+                      acknowledge: bool = None,
                       blackwhitelist: aiowamp.BlackWhiteList = None,
                       exclude_me: bool = None,
                       disclose_me: bool = None,

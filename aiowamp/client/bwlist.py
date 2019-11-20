@@ -131,6 +131,7 @@ T = TypeVar("T")
 
 
 def index(s: Sequence[T], v: T) -> int:
+    # TODO benchmark whether it even makes sense to use bisect here
     i = bisect.bisect_left(s, v)
     if i != len(s) and s[i] == v:
         return i

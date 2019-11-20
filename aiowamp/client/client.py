@@ -360,12 +360,12 @@ class Client(ClientABC):
 
     async def publish(self, topic: str, *args: aiowamp.WAMPType,
                       kwargs: aiowamp.WAMPDict = None,
-                      acknowledge: bool = True,
+                      acknowledge: bool = None,
                       blackwhitelist: aiowamp.BlackWhiteList = None,
                       exclude_me: bool = None,
                       disclose_me: bool = None,
                       options: aiowamp.WAMPDict = None) -> None:
-        if acknowledge or (options and "acknowledge" in options):
+        if acknowledge is not None:
             options = _set_value(options, "acknowledge", acknowledge)
 
         if exclude_me is not None:
