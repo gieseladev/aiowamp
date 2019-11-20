@@ -15,5 +15,5 @@ from .transports import *
 
 from .client import *
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 __author__ = "Giesela Inc."
