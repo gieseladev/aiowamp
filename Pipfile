@@ -10,7 +10,6 @@ mypy = "*"
 nuitka = "*"
 
 [packages]
-aiobservable = "*"
 msgpack = "*"
 websockets = "*"
 

@@ -158,6 +158,10 @@ class ClientABC(abc.ABC):
         return f"{type(self).__qualname__} {id(self):x}"
 
     @abc.abstractmethod
+    async def wait_until_done(self) -> None:
+        ...
+
+    @abc.abstractmethod
     async def close(self, details: aiowamp.WAMPDict = None, *,
                     reason: str = None) -> None:
         """Close the client and the underlying session.
@@ -414,6 +418,9 @@ class Client(ClientABC):
             await self.session.close(details, reason=reason)
         finally:
             await self._cleanup()
+
+    async def wait_until_done(self) -> None:
+        await self.session.wait_until_done()
 
     def get_registration_ids(self, procedure: str) -> Tuple[int, ...]:
         """Get the ids of the registrations for the given procedure.

@@ -3,12 +3,12 @@ from __future__ import annotations
 import abc
 import asyncio
 import logging
-from typing import Any, Callable, Dict, List, Optional, Set
+from typing import Any, Callable, Dict, List, Optional, Set, Awaitable
 
 import aiowamp
 from .maybe_awaitable import MaybeAwaitable, call_async_fn_background
 from .message import message_as_type
-from .msg import Goodbye
+from .msg import Goodbye as GoodbyeMsg
 from .uri import CLOSE_NORMAL, GOODBYE_AND_OUT
 
 __all__ = ["MessageHandler",
@@ -69,6 +69,10 @@ class SessionABC(abc.ABC):
         ...
 
     @abc.abstractmethod
+    async def wait_until_done(self) -> Optional[aiowamp.msg.Goodbye]:
+        ...
+
+    @abc.abstractmethod
     def add_message_handler(self, handler: aiowamp.MessageHandler) -> None:
         ...
 
@@ -89,6 +93,7 @@ class SessionABC(abc.ABC):
 
 class Session(SessionABC):
     __slots__ = ("transport",
+                 "control_transport",
                  "__session_id", "__realm", "__details",
                  "__roles",
                  "__goodbye_fut",
@@ -96,6 +101,12 @@ class Session(SessionABC):
 
     transport: aiowamp.TransportABC
     """Transport used by the session."""
+
+    control_transport: bool
+    """Whether the session controls the underlying transport.
+    
+    If this is `True`, the session will close the transport when it 
+    """
 
     __session_id: int
     __realm: str
@@ -108,11 +119,14 @@ class Session(SessionABC):
     __msg_handlers: List["aiowamp.MessageHandler"]
     __receive_task: Optional[asyncio.Task]
 
-    def __init__(self, transport: aiowamp.TransportABC, session_id: int, realm: str, details: aiowamp.WAMPDict) -> None:
+    def __init__(self, transport: aiowamp.TransportABC, session_id: int, realm: str, details: aiowamp.WAMPDict, *,
+                 control_transport: bool = True) -> None:
         if not transport.open:
             raise RuntimeError(f"transport {transport} must be open")
 
         self.transport = transport
+
+        self.control_transport = control_transport
 
         self.__session_id = session_id
         self.__realm = realm
@@ -175,7 +189,7 @@ class Session(SessionABC):
             if goodbye.reason == GOODBYE_AND_OUT:
                 log.warning(f"received {goodbye} confirmation before closing.")
 
-            await self.send(Goodbye(
+            await self.send(GoodbyeMsg(
                 {},
                 GOODBYE_AND_OUT,
             ))
@@ -188,7 +202,7 @@ class Session(SessionABC):
         while True:
             msg = await self.transport.recv()
 
-            goodbye = message_as_type(msg, Goodbye)
+            goodbye = message_as_type(msg, GoodbyeMsg)
             if goodbye:
                 await self.__handle_goodbye(goodbye)
                 break
@@ -206,24 +220,29 @@ class Session(SessionABC):
 
     async def close(self, details: aiowamp.WAMPDict = None, *,
                     reason: aiowamp.URI = None) -> None:
-        if not self.__receive_loop_running():
-            log.info("%s: closing before receive loop started", self)
-            self.start()
+        _ = self.__get_goodbye_fut()
 
-        goodbye_fut = self.__get_goodbye_fut()
-
-        await self.send(Goodbye(
+        await self.send(GoodbyeMsg(
             details or {},
             reason or CLOSE_NORMAL,
         ))
 
-        await goodbye_fut
-        await self.transport.close()
+        try:
+            await self.wait_until_done()
+        except Exception:
+            log.exception("receive loop raised exception")
+
+    async def wait_until_done(self) -> Optional[aiowamp.msg.Goodbye]:
+        if not self.__receive_loop_running():
+            self.start()
 
         try:
             await self.__receive_task
-        except Exception:
-            log.exception("receive loop raised exception")
+        finally:
+            if self.control_transport:
+                await self.transport.close()
+
+        return self.goodbye
 
     def add_message_handler(self, handler: aiowamp.MessageHandler) -> None:
         if handler in self.__msg_handlers:
