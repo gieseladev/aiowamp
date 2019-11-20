@@ -18,7 +18,7 @@ CLIENT_ROLES = {
             "publisher_identification": True,
             "publication_trustlevels": True,
             "pattern_based_subscription": True,
-            "sharded_subscription": True,  # TODO maybe?
+            "sharded_subscription": True,
             "event_history": True,
             "subscription_revocation": True,  # TODO
         },
@@ -32,7 +32,7 @@ CLIENT_ROLES = {
             "call_trustlevels": True,
             "pattern_based_registration": True,
             "shared_registration": True,
-            "sharded_registration": True,  # TODO maybe not
+            "sharded_registration": True,
             "registration_revocation": True,  # TODO
         },
     },

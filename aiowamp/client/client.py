@@ -277,6 +277,7 @@ class Client(ClientABC):
              call_timeout: float = None,
              cancel_mode: aiowamp.CancelMode = None,
              disclose_me: bool = None,
+             resource_key: str = None,
              options: aiowamp.WAMPDict = None) -> aiowamp.CallABC:
         if receive_progress is not None:
             options = _set_value(options, "receive_progress", receive_progress)
@@ -286,6 +287,10 @@ class Client(ClientABC):
 
         if disclose_me is not None:
             options = _set_value(options, "disclose_me", disclose_me)
+
+        if resource_key is not None:
+            options = _set_value(options, "rkey", resource_key)
+            options["runmode"] = "partition"
 
         req_id = next(self.id_gen)
         call = aiowamp.Call(
@@ -317,6 +322,7 @@ class Client(ClientABC):
 
     async def subscribe(self, topic: str, callback: aiowamp.SubscriptionHandler, *,
                         match_policy: aiowamp.MatchPolicy = None,
+                        node_key: str = None,
                         options: aiowamp.WAMPDict = None) -> None:
         if match_policy is not None:
             topic_uri = aiowamp.URI(topic, match_policy=match_policy)
@@ -325,6 +331,9 @@ class Client(ClientABC):
 
         if topic_uri.match_policy:
             options = _set_value(options, "match", topic_uri.match_policy)
+
+        if node_key is not None:
+            options = _set_value(options, "nkey", node_key)
 
         req_id = next(self.id_gen)
         async with self._expecting_response(req_id) as resp:
@@ -364,9 +373,13 @@ class Client(ClientABC):
                       blackwhitelist: aiowamp.BlackWhiteList = None,
                       exclude_me: bool = None,
                       disclose_me: bool = None,
+                      resource_key: str = None,
                       options: aiowamp.WAMPDict = None) -> None:
         if acknowledge is not None:
             options = _set_value(options, "acknowledge", acknowledge)
+
+        if blackwhitelist:
+            options = blackwhitelist.to_options(options)
 
         if exclude_me is not None:
             options = _set_value(options, "exclude_me", exclude_me)
@@ -374,8 +387,8 @@ class Client(ClientABC):
         if disclose_me is not None:
             options = _set_value(options, "disclose_me", disclose_me)
 
-        if blackwhitelist:
-            options = blackwhitelist.to_options(options)
+        if resource_key is not None:
+            options = _set_value(options, "rkey", resource_key)
 
         req_id = next(self.id_gen)
         send_coro = self.session.send(aiowamp.msg.Publish(

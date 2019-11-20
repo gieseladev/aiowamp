@@ -474,12 +474,14 @@ class ClientABC(abc.ABC):
              call_timeout: float = None,
              cancel_mode: aiowamp.CancelMode = None,
              disclose_me: bool = None,
+             resource_key: str = None,
              options: aiowamp.WAMPDict = None) -> aiowamp.CallABC:
         ...
 
     @abc.abstractmethod
     async def subscribe(self, topic: str, callback: aiowamp.SubscriptionHandler, *,
                         match_policy: aiowamp.MatchPolicy = None,
+                        node_key: str = None,
                         options: aiowamp.WAMPDict = None) -> None:
         ...
 
@@ -502,6 +504,7 @@ class ClientABC(abc.ABC):
                       blackwhitelist: aiowamp.BlackWhiteList = None,
                       exclude_me: bool = None,
                       disclose_me: bool = None,
+                      resource_key: str = None,
                       options: aiowamp.WAMPDict = None) -> None:
         ...
 

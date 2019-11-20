@@ -100,9 +100,12 @@ class Template:
 
     def event(self, uri: str, *,
               match_policy: aiowamp.MatchPolicy = None,
+              node_key: str = None,
               options: aiowamp.WAMPDict = None) -> NoOpDecorator:
         if match_policy is not None:
             uri = aiowamp.URI(uri, match_policy=match_policy)
+
+        options = build_options(options, nkey=node_key)
 
         def decorator(fn):
             handler = create_subscription_handler(uri, fn, options)
@@ -156,9 +159,12 @@ def procedure(uri: str = None, *,
 
 def event(uri: str, *,
           match_policy: aiowamp.MatchPolicy = None,
+          node_key: str = None,
           options: aiowamp.WAMPDict = None) -> NoOpDecorator:
     if match_policy is not None:
         uri = aiowamp.URI(uri, match_policy=match_policy)
+
+    options = build_options(options, nkey=node_key)
 
     def decorator(fn):
         handler = create_subscription_handler(uri, fn, options)
