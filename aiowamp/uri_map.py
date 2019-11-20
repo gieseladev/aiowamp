@@ -97,8 +97,10 @@ class URIMap(MutableMapping["aiowamp.URI", KV_co], Generic[KV_co]):
 
         raise KeyError(uri)
 
-    def __setitem__(self, uri: str, value: KV_co) -> None:
-        uri = aiowamp.URI.as_uri(uri)
+    def __setitem__(self, uri: aiowamp.URI, value: KV_co) -> None:
+        if not isinstance(uri, aiowamp.URI):
+            raise TypeError(f"instance of aiowamp.URI required, not {type(uri).__name__}")
+
         match_policy = uri.match_policy
 
         if match_policy is None:
@@ -112,8 +114,10 @@ class URIMap(MutableMapping["aiowamp.URI", KV_co], Generic[KV_co]):
         else:
             raise ValueError(f"unknown match policy: {match_policy!r}")
 
-    def __delitem__(self, uri: str) -> None:
-        uri = aiowamp.URI.as_uri(uri)
+    def __delitem__(self, uri: aiowamp.URI) -> None:
+        if not isinstance(uri, aiowamp.URI):
+            raise TypeError(f"instance of aiowamp.URI required, not {type(uri).__name__}")
+
         match_policy = uri.match_policy
 
         if match_policy is None:

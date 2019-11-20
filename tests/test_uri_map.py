@@ -14,7 +14,7 @@ def wildcard(s: str) -> aiowamp.URI:
 
 def test_order():
     u = URIMap()
-    u["a1.b2.c3.d4.e55"] = 1
+    u[aiowamp.URI("a1.b2.c3.d4.e55")] = 1
 
     u[prefix("a1.b2.c3")] = 2
     u[prefix("a1.b2.c3.d4")] = 3
