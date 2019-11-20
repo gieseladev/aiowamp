@@ -1,5 +1,5 @@
 import bisect
-from typing import Container, Iterable, List, Optional, Sequence, Set, TypeVar, Union
+from typing import Container, Iterable, List, Optional, Set, TypeVar, Union
 
 import aiowamp
 
@@ -87,7 +87,7 @@ class BlackWhiteList(Container[BWItemType]):
             return contains_if_not_none(self.eligible_auth_roles, receiver, True) or \
                    contains_if_not_none(self.eligible_auth_ids, receiver, True)
 
-        return contains_if_not_none(self.excluded_ids, receiver, True)
+        return contains_if_not_none(self.eligible_ids, receiver, True)
 
     def exclude_session_id(self, session_id: int) -> None:
         self.excluded_ids = add_optional_unique_list(self.excluded_ids, session_id)
@@ -130,32 +130,11 @@ class BlackWhiteList(Container[BWItemType]):
 T = TypeVar("T")
 
 
-def index(s: Sequence[T], v: T) -> int:
-    # TODO benchmark whether it even makes sense to use bisect here
-    i = bisect.bisect_left(s, v)
-    if i != len(s) and s[i] == v:
-        return i
-
-    return s.index(v)
-
-
-def contains(c: Container[T], v: T) -> bool:
-    if isinstance(c, Sequence):
-        try:
-            index(c, v)
-        except ValueError:
-            return False
-        else:
-            return True
-
-    return v in c
-
-
 def contains_if_not_none(c: Optional[Container[T]], v: T, default: bool) -> bool:
     if c is None:
         return default
 
-    return contains(c, v)
+    return v in c
 
 
 def unique_list_or_none(it: Optional[Iterable[T]]) -> Optional[List[T]]:
@@ -173,7 +152,7 @@ def add_optional_unique_list(l: Optional[List[T]], v: T) -> List[T]:
     if l is None:
         return [v]
 
-    if not contains(l, v):
+    if v not in l:
         bisect.insort(l, v)
 
     return v
