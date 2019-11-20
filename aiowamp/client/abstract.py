@@ -487,11 +487,11 @@ class ClientABC(abc.ABC):
                        disclose_caller: bool = None,
                        match_policy: aiowamp.MatchPolicy = None,
                        invocation_policy: aiowamp.InvocationPolicy = None,
-                       options: aiowamp.WAMPDict = None) -> None:
+                       options: aiowamp.WAMPDict = None) -> int:
         ...
 
     @abc.abstractmethod
-    async def unregister(self, procedure: str) -> None:
+    async def unregister(self, procedure: str, registration_id: int = None) -> None:
         ...
 
     @abc.abstractmethod
@@ -509,15 +509,16 @@ class ClientABC(abc.ABC):
     async def subscribe(self, topic: str, callback: aiowamp.SubscriptionHandler, *,
                         match_policy: aiowamp.MatchPolicy = None,
                         node_key: str = None,
-                        options: aiowamp.WAMPDict = None) -> None:
+                        options: aiowamp.WAMPDict = None) -> int:
         ...
 
     @abc.abstractmethod
-    async def unsubscribe(self, topic: str) -> None:
+    async def unsubscribe(self, topic: str, subscription_id: int = None) -> None:
         """Unsubscribe from the given topic.
 
         Args:
             topic: Topic URI to unsubscribe from.
+            subscription_id: Specific subscription id to unsubscribe.
 
         Raises:
             KeyError: If not subscribed to the topic.
@@ -591,15 +592,3 @@ class AuthKeyringABC(Mapping[str, AuthMethodABC], abc.ABC):
     @abc.abstractmethod
     def auth_extra(self) -> Optional[aiowamp.WAMPDict]:
         ...
-
-# class SerializableAuthMethodABC(AuthMethodABC, abc.ABC):
-#     __slots__ = ()
-#
-#     @classmethod
-#     @abc.abstractmethod
-#     def load(cls: Type[T], data: aiowamp.WAMPDict) -> T:
-#         ...
-#
-#     @abc.abstractmethod
-#     def dump(self) -> aiowamp.WAMPDict:
-#         return {"method": self.method_name}

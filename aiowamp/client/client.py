@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import array
 import asyncio
 import contextlib
 import logging
-from typing import AsyncIterator, Awaitable, Dict, Optional, Tuple, TypeVar
+from typing import AsyncIterator, Awaitable, Dict, MutableMapping, Optional, Tuple, TypeVar
 
 import aiowamp
 from .abstract import ClientABC
@@ -33,12 +34,10 @@ class Client(ClientABC):
     __ongoing_calls: Dict[int, aiowamp.Call]
     __running_procedures: Dict[int, ProcedureRunnerABC]
 
-    # TODO can have multiple procedures with the same uri
-    # TODO same for subs
-    __procedure_ids: Dict[str, int]
+    __procedure_ids: Dict[str, array.ArrayType]
     __procedures: Dict[int, Tuple[RunnerFactory, aiowamp.URI]]
 
-    __sub_ids: Dict[str, int]
+    __sub_ids: Dict[str, array.ArrayType]
     __sub_handlers: Dict[int, Tuple[aiowamp.SubscriptionHandler, aiowamp.URI]]
 
     def __init__(self, session: aiowamp.SessionABC) -> None:
@@ -211,29 +210,32 @@ class Client(ClientABC):
         finally:
             await self._cleanup()
 
-    def get_registration_id(self, procedure: str) -> Optional[int]:
-        """Get the id of the registration for the given procedure.
+    def get_registration_ids(self, procedure: str) -> Tuple[int, ...]:
+        """Get the ids of the registrations for the given procedure.
 
         Args:
-            procedure: Procedure to get registration id for.
+            procedure: Procedure to get registration ids for.
 
         Returns:
-            Procedure id. `None`, if no registration for the procedure.
+            Tuple containing the registration ids.
         """
-        return self.__procedure_ids.get(procedure)
+        try:
+            return tuple(self.__procedure_ids[procedure])
+        except KeyError:
+            return ()
 
     async def register(self, procedure: str, handler: aiowamp.InvocationHandler, *,
                        disclose_caller: bool = None,
                        match_policy: aiowamp.MatchPolicy = None,
                        invocation_policy: aiowamp.InvocationPolicy = None,
-                       options: aiowamp.WAMPDict = None) -> None:
+                       options: aiowamp.WAMPDict = None) -> int:
+        # get runner factory up here already to catch errors early
+        runner = get_runner_factory(handler)
+
         if match_policy is not None:
             procedure_uri = aiowamp.URI(procedure, match_policy=match_policy)
         else:
             procedure_uri = aiowamp.URI.as_uri(procedure)
-
-        # get runner factory up here already to catch errors early
-        runner = get_runner_factory(handler)
 
         if disclose_caller is not None:
             options = _set_value(options, "disclose_caller", disclose_caller)
@@ -255,15 +257,13 @@ class Client(ClientABC):
         registered = check_message_response(await resp, aiowamp.msg.Registered)
 
         reg_id = registered.registration_id
-        self.__procedure_ids[procedure_uri] = reg_id
+        _add_to_array(self.__procedure_ids, procedure_uri, reg_id)
+
         self.__procedures[reg_id] = runner, procedure_uri
 
-    async def unregister(self, procedure: str) -> None:
-        try:
-            reg_id = self.__procedure_ids.pop(procedure)
-        except KeyError:
-            raise KeyError(f"no procedure registered for {procedure!r}") from None
+        return reg_id
 
+    async def __unregister(self, reg_id: int) -> None:
         with contextlib.suppress(KeyError):
             del self.__procedures[reg_id]
 
@@ -272,6 +272,24 @@ class Client(ClientABC):
             await self.session.send(aiowamp.msg.Unregister(req_id, reg_id))
 
         check_message_response(await resp, aiowamp.msg.Unregistered)
+
+    async def unregister(self, procedure: str, registration_id: int = None) -> None:
+        if registration_id is None:
+            try:
+                reg_ids = self.__procedure_ids.pop(procedure)
+            except KeyError:
+                raise KeyError(f"no procedure registered for {procedure!r}") from None
+
+            await asyncio.gather(*(self.__unregister(reg_id) for reg_id in reg_ids))
+            return
+
+        if registration_id not in self.__procedures:
+            raise KeyError(f"unknown registration id {registration_id!r}")
+
+        with contextlib.suppress(KeyError, ValueError):
+            self.__procedure_ids[procedure].remove(registration_id)
+
+        await self.__unregister(registration_id)
 
     def call(self, procedure: str, *args: aiowamp.WAMPType,
              kwargs: aiowamp.WAMPDict = None,
@@ -311,21 +329,24 @@ class Client(ClientABC):
 
         return call
 
-    def get_subscription_id(self, topic: str) -> Optional[int]:
-        """Get the id of the subscription for the given topic.
+    def get_subscription_ids(self, topic: str) -> Tuple[int, ...]:
+        """Get the ids of the subscriptions for the given topic.
 
         Args:
-            topic: Topic to get subscription id for.
+            topic: Topic to get subscription ids for.
 
         Returns:
-            Subscription id. `None`, if not subscribed to the topic.
+            Tuple of subscription ids.
         """
-        return self.__sub_ids.get(topic)
+        try:
+            return tuple(self.__sub_ids[topic])
+        except KeyError:
+            return ()
 
     async def subscribe(self, topic: str, callback: aiowamp.SubscriptionHandler, *,
                         match_policy: aiowamp.MatchPolicy = None,
                         node_key: str = None,
-                        options: aiowamp.WAMPDict = None) -> None:
+                        options: aiowamp.WAMPDict = None) -> int:
         if match_policy is not None:
             topic_uri = aiowamp.URI(topic, match_policy=match_policy)
         else:
@@ -348,18 +369,12 @@ class Client(ClientABC):
         subscribed = check_message_response(await resp, aiowamp.msg.Subscribed)
 
         sub_id = subscribed.subscription_id
-        self.__sub_ids[topic_uri] = sub_id
+        _add_to_array(self.__sub_ids, topic_uri, sub_id)
         self.__sub_handlers[sub_id] = callback, topic_uri
 
-    async def unsubscribe(self, topic: str) -> None:
-        # delete the local subscription first. This might lead to the situation
-        # where we still receive events but don't have a handler but that's at
-        # least better than the alternative.
-        try:
-            sub_id = self.__sub_ids.pop(topic)
-        except KeyError:
-            raise KeyError(f"not subscribed to {topic!r}") from None
+        return sub_id
 
+    async def __unsubscribe(self, sub_id: int) -> None:
         with contextlib.suppress(KeyError):
             del self.__sub_handlers[sub_id]
 
@@ -368,6 +383,24 @@ class Client(ClientABC):
             await self.session.send(aiowamp.msg.Unsubscribe(req_id, sub_id))
 
         check_message_response(await resp, aiowamp.msg.Unsubscribed)
+
+    async def unsubscribe(self, topic: str, subscription_id: int = None) -> None:
+        if subscription_id is None:
+            try:
+                sub_ids = self.__procedure_ids.pop(topic)
+            except KeyError:
+                raise KeyError(f"no subscription for {topic!r}") from None
+
+            await asyncio.gather(*(self.__unsubscribe(sub_id) for sub_id in sub_ids))
+            return
+
+        if subscription_id not in self.__procedures:
+            raise KeyError(f"unknown subscription id {subscription_id!r}")
+
+        with contextlib.suppress(KeyError, ValueError):
+            self.__sub_ids[topic].remove(subscription_id)
+
+        await self.__unsubscribe(subscription_id)
 
     async def publish(self, topic: str, *args: aiowamp.WAMPType,
                       kwargs: aiowamp.WAMPDict = None,
@@ -424,3 +457,12 @@ def _set_value(d: Optional[T], key: str, value: aiowamp.WAMPType) -> T:
 
     d[key] = value
     return d
+
+
+def _add_to_array(d: MutableMapping[str, array.ArrayType], key: str, value: int) -> None:
+    try:
+        a = d[key]
+    except KeyError:
+        d[key] = array.array("Q", (value,))
+    else:
+        a.append(value)

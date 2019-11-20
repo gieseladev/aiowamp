@@ -53,7 +53,7 @@ class Template:
         if not handlers:
             return policy
 
-        if policy is aiowamp.INVOKE_SINGLE:
+        if policy == aiowamp.INVOKE_SINGLE:
             raise TypeError(f"there are multiple procedures for the uri {uri}. "
                             f"Invocation policy must something other than {aiowamp.INVOKE_SINGLE!r}")
 

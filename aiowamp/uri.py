@@ -1,4 +1,4 @@
-from typing import NewType, Optional, Type, TypeVar, Tuple
+from typing import NewType, Optional, Tuple, Type, TypeVar
 
 __all__ = ["MatchPolicy", "MATCH_PREFIX", "MATCH_WILDCARD",
            "URI"]
@@ -13,7 +13,18 @@ T = TypeVar("T")
 
 
 class URI(str):
-    """WAMP URI."""
+    """WAMP URI.
+
+    A `URI` is a subclass of `str` and can be used wherever a string would be
+    expected. Apart from object identity (`id`) URIs are also completely equal
+    to their string equivalent (ex: "hash(aiowamp.URI('a')) == hash('a')).
+
+    The benefit of URIs (apart from the semantics) is that they can carry a
+    `MatchPolicy` with them.
+    All functions that accept a "match_policy" keyword argument will also check
+    for the `.match_policy` (Note that the keyword argument will always be used
+    if specified).
+    """
     __slots__ = ("match_policy",)
 
     match_policy: Optional[MatchPolicy]
