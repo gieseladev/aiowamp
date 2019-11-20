@@ -5,6 +5,12 @@ import urllib.parse as urlparse
 from typing import Union
 
 import aiowamp
+from aiowamp import AbortError, AuthError, CommonTransportConfig, Session, UnexpectedMessageError, connect_transport, \
+    is_message_type, message_as_type
+from aiowamp.msg import Abort as AbortMsg, Challenge as ChallengeMsg, Hello as HelloMsg, Welcome as WelcomeMsg
+from aiowamp.uri import AUTHORIZATION_FAILED
+from .client import Client
+from .roles import CLIENT_ROLES
 
 __all__ = ["connect", "join_realm"]
 
@@ -12,13 +18,13 @@ log = logging.getLogger(__name__)
 
 
 def assert_welcome(msg: aiowamp.MessageABC) -> aiowamp.msg.Welcome:
-    abort = aiowamp.message_as_type(msg, aiowamp.msg.Abort)
+    abort = message_as_type(msg, AbortMsg)
     if abort:
-        raise aiowamp.AbortError(abort)
+        raise AbortError(abort)
 
-    welcome = aiowamp.message_as_type(msg, aiowamp.msg.Welcome)
+    welcome = message_as_type(msg, WelcomeMsg)
     if not welcome:
-        raise aiowamp.UnexpectedMessageError(msg, aiowamp.msg.Welcome)
+        raise UnexpectedMessageError(msg, WelcomeMsg)
 
     return welcome
 
@@ -28,8 +34,8 @@ async def _authenticate(transport: aiowamp.TransportABC, challenge: aiowamp.msg.
     try:
         method = keyring[challenge.auth_method]
     except KeyError:
-        raise aiowamp.AuthError(f"challenged with auth method {challenge.auth_method}, "
-                                f"but no such method in keyring: {keyring}") from None
+        raise AuthError(f"challenged with auth method {challenge.auth_method}, "
+                        f"but no such method in keyring: {keyring}") from None
 
     exc = None
     try:
@@ -37,13 +43,13 @@ async def _authenticate(transport: aiowamp.TransportABC, challenge: aiowamp.msg.
     except Exception as e:
         log.exception("authentication failed", e)
         exc = e
-        auth = aiowamp.msg.Abort({"error": type(e).__qualname__}, aiowamp.uri.AUTHORIZATION_FAILED)
+        auth = AbortMsg({"error": type(e).__qualname__}, AUTHORIZATION_FAILED)
 
     await transport.send(auth)
 
-    if aiowamp.is_message_type(auth, aiowamp.msg.Abort):
+    if is_message_type(auth, AbortMsg):
         await transport.close()
-        raise aiowamp.AuthError(f"authentication aborted: {auth!r}") from exc
+        raise AuthError(f"authentication aborted: {auth!r}") from exc
 
     welcome = assert_welcome(await transport.recv())
     await method.check_welcome(welcome)
@@ -71,23 +77,23 @@ async def join_realm(transport: aiowamp.TransportABC, realm: str, *,
     if roles is not None:
         details["roles"] = roles
 
-    await transport.send(aiowamp.msg.Hello(
+    await transport.send(HelloMsg(
         realm,
         details,
     ))
 
     msg = await transport.recv()
 
-    challenge = aiowamp.message_as_type(msg, aiowamp.msg.Challenge)
+    challenge = message_as_type(msg, ChallengeMsg)
     if challenge:
         if not keyring:
-            raise aiowamp.AuthError(f"received challenged with no keyring: {challenge!r}")
+            raise AuthError(f"received challenged with no keyring: {challenge!r}")
 
         welcome = await _authenticate(transport, challenge, keyring=keyring)
     else:
         welcome = assert_welcome(msg)
 
-    return aiowamp.Session(transport, welcome.session_id, realm, welcome.details)
+    return Session(transport, welcome.session_id, realm, welcome.details)
 
 
 async def connect(url: Union[str, urlparse.ParseResult], *,
@@ -98,7 +104,7 @@ async def connect(url: Union[str, urlparse.ParseResult], *,
         url = urlparse.urlparse(url)
 
     log.info("connecting to %s", url)
-    transport = await aiowamp.connect_transport(aiowamp.CommonTransportConfig(
+    transport = await connect_transport(CommonTransportConfig(
         url,
         serializer=serializer,
     ))
@@ -106,5 +112,5 @@ async def connect(url: Union[str, urlparse.ParseResult], *,
     log.info("joining realm %s", realm)
     session = await join_realm(transport, realm,
                                keyring=keyring,
-                               roles=aiowamp.CLIENT_ROLES)
-    return aiowamp.Client(session)
+                               roles=CLIENT_ROLES)
+    return Client(session)

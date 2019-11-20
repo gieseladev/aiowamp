@@ -1,13 +1,89 @@
 from __future__ import annotations
 
-from typing import Generic, Tuple, TypeVar
+import abc
+from typing import Generic, Optional, Tuple, TypeVar
 
 import aiowamp
-from .abstract import ClientABC, SubscriptionEventABC
+from aiowamp import URI
+from aiowamp.args_mixin import ArgsMixin
 
-__all__ = ["SubscriptionEvent"]
+__all__ = ["SubscriptionEventABC", "SubscriptionEvent"]
 
-ClientT = TypeVar("ClientT", bound=ClientABC)
+ClientT = TypeVar("ClientT", bound="aiowamp.ClientABC")
+
+
+class SubscriptionEventABC(ArgsMixin, abc.ABC, Generic[ClientT]):
+    __slots__ = ()
+
+    def __str__(self) -> str:
+        return f"{type(self).__qualname__} {self.publication_id}"
+
+    @property
+    @abc.abstractmethod
+    def client(self) -> ClientT:
+        ...
+
+    @property
+    @abc.abstractmethod
+    def publication_id(self) -> int:
+        ...
+
+    @property
+    @abc.abstractmethod
+    def subscribed_topic(self) -> aiowamp.URI:
+        ...
+
+    @property
+    def topic(self) -> aiowamp.URI:
+        """Concrete topic that caused the event.
+
+        This will be the same as `subscribed_topic` unless the handler
+        subscribed with a pattern-based matching policy.
+        """
+        try:
+            return URI(self.details["topic"])
+        except KeyError:
+            return self.subscribed_topic
+
+    @property
+    @abc.abstractmethod
+    def args(self) -> Tuple[aiowamp.WAMPType, ...]:
+        ...
+
+    @property
+    @abc.abstractmethod
+    def kwargs(self) -> aiowamp.WAMPDict:
+        ...
+
+    @property
+    @abc.abstractmethod
+    def details(self) -> aiowamp.WAMPDict:
+        ...
+
+    @property
+    def publisher_id(self) -> Optional[int]:
+        """Get the publisher's id.
+
+        Returns:
+            WAMP id of the caller, or `None` if not disclosed.
+        """
+        return self.details.get("caller")
+
+    @property
+    def trust_level(self) -> Optional[int]:
+        """Get the router assigned trust level.
+
+        The trust level 0 means lowest trust, and higher integers represent
+        (application-defined) higher levels of trust.
+
+        Returns:
+            The trust level, or `None` if not specified.
+        """
+        return self.details.get("trustlevel")
+
+    @abc.abstractmethod
+    async def unsubscribe(self) -> None:
+        ...
 
 
 class SubscriptionEvent(SubscriptionEventABC[ClientT], Generic[ClientT]):

@@ -3,12 +3,17 @@ import json
 from typing import Any, ByteString, Iterable, Optional, Tuple
 
 import aiowamp
+from aiowamp import SerializerABC, build_message_from_list
 
 __all__ = ["JSONSerializer", "JSONDecoder", "JSONEncoder"]
 
 
-class JSONSerializer(aiowamp.SerializerABC):
-    """Serializer for the JSON format."""
+class JSONSerializer(SerializerABC):
+    """Serializer for the JSON format.
+
+    Provides a custom `json.JSONDecoder` and `json.JSONEncoder` which handle
+    the special WAMP string format for binary data.
+    """
     __slots__ = ("decoder", "encoder")
 
     decoder: json.JSONDecoder
@@ -36,7 +41,7 @@ class JSONSerializer(aiowamp.SerializerABC):
 
     def deserialize(self, data: bytes) -> aiowamp.MessageABC:
         msg_list = self.decoder.decode(data.decode())
-        return aiowamp.build_message_from_list(msg_list)
+        return build_message_from_list(msg_list)
 
 
 def is_encoded_bytes(s: str) -> bool:

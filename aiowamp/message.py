@@ -1,23 +1,31 @@
+"""Contains the abstract message type and message utilities.
+
+The built-in message definitions can be found in the msg.py file.
+"""
+
+from __future__ import annotations
+
 import abc
 from typing import ClassVar, Dict, List, Optional, Type, TypeVar, Union, cast
 
 import aiowamp
+from .errors import InvalidMessage
 
 __all__ = ["WAMPType", "WAMPList", "WAMPDict",
            "MessageABC",
            "is_message_type", "message_as_type",
            "register_message_cls", "get_message_cls", "build_message_from_list"]
 
-WAMPType = Union[int, str, bool, "WAMPList", "WAMPDict"]
+WAMPType = Union[int, str, bool, "aiowamp.WAMPList", "aiowamp.WAMPDict"]
 """WAMP type.
 
 Contains value types which SHOULD be supported by all serializers.
 """
 
-WAMPList = List[WAMPType]
+WAMPList = List["aiowamp.WAMPType"]
 """Type of a list containing WAMP types."""
 
-WAMPDict = Dict[str, WAMPType]
+WAMPDict = Dict[str, "aiowamp.WAMPDict"]
 """Dict with string keys and WAMP type values."""
 
 T = TypeVar("T")
@@ -34,7 +42,7 @@ class MessageABC(abc.ABC):
         return f"{self.message_type} {type(self).__qualname__}"
 
     @abc.abstractmethod
-    def to_message_list(self) -> WAMPList:
+    def to_message_list(self) -> aiowamp.WAMPList:
         """Convert the message to a list
 
         Returns:
@@ -44,7 +52,7 @@ class MessageABC(abc.ABC):
 
     @classmethod
     @abc.abstractmethod
-    def from_message_list(cls: Type[T], msg_list: WAMPList) -> T:
+    def from_message_list(cls: Type[T], msg_list: aiowamp.WAMPList) -> T:
         """Build the message from msg_list.
 
         Args:
@@ -56,7 +64,7 @@ class MessageABC(abc.ABC):
         ...
 
 
-def is_message_type(msg: MessageABC, msg_type: Type[MessageABC]) -> bool:
+def is_message_type(msg: aiowamp.MessageABC, msg_type: Type["aiowamp.MessageABC"]) -> bool:
     """Checks whether msg is of type msg_type.
 
     This should be preferred over `isinstance` checks as it supports duck typing.
@@ -77,10 +85,10 @@ def is_message_type(msg: MessageABC, msg_type: Type[MessageABC]) -> bool:
     return msg.message_type == msg_type.message_type
 
 
-MsgT = TypeVar("MsgT", bound=MessageABC)
+MsgT = TypeVar("MsgT", bound="aiowamp.MessageABC")
 
 
-def message_as_type(msg: MessageABC, msg_type: Type[MsgT]) -> Optional[MsgT]:
+def message_as_type(msg: aiowamp.MessageABC, msg_type: Type[MsgT]) -> Optional[MsgT]:
     """Cast msg if it is of type msg_type.
 
     Uses `aiowamp.is_message_type` to check if msg is of type msg_type.
@@ -108,10 +116,10 @@ def message_as_type(msg: MessageABC, msg_type: Type[MsgT]) -> Optional[MsgT]:
     return None
 
 
-MESSAGE_TYPE_MAP: Dict[int, Type[MessageABC]] = {}
+MESSAGE_TYPE_MAP: Dict[int, Type["aiowamp.MessageABC"]] = {}
 
 
-def register_message_cls(*messages: Type[MessageABC], overwrite: bool = False) -> None:
+def register_message_cls(*messages: Type["aiowamp.MessageABC"], overwrite: bool = False) -> None:
     """Register the messages.
 
     Args:
@@ -137,7 +145,7 @@ def register_message_cls(*messages: Type[MessageABC], overwrite: bool = False) -
         MESSAGE_TYPE_MAP[mtyp] = m
 
 
-def get_message_cls(msg_type: int) -> Type[MessageABC]:
+def get_message_cls(msg_type: int) -> Type["aiowamp.MessageABC"]:
     """Returns the message type registered for msg_type.
 
     Args:
@@ -155,7 +163,7 @@ def get_message_cls(msg_type: int) -> Type[MessageABC]:
         raise KeyError(f"no message type registered for type: {msg_type}") from None
 
 
-def build_message_from_list(msg_list: WAMPList) -> MessageABC:
+def build_message_from_list(msg_list: aiowamp.WAMPList) -> aiowamp.MessageABC:
     """Create a message from msg_list.
 
     Uses the registered message type.
@@ -165,18 +173,24 @@ def build_message_from_list(msg_list: WAMPList) -> MessageABC:
 
     Returns:
         Built message.
+
+    Raises:
+        aiowamp.InvalidMessage: If the message is invalid.
     """
     try:
         msg_type = msg_list[0]
     except IndexError:
-        raise aiowamp.InvalidMessage("received message without message type") from None
+        raise InvalidMessage("received message without message type") from None
 
     if not isinstance(msg_type, int):
-        raise aiowamp.InvalidMessage("received message without integer message type")
+        raise InvalidMessage("received message without integer message type")
 
-    msg_cls = get_message_cls(msg_type)
+    try:
+        msg_cls = get_message_cls(msg_type)
+    except KeyError:
+        raise InvalidMessage(f"no message class for type {msg_type!r} found")
 
     try:
         return msg_cls.from_message_list(msg_list[1:])
     except Exception as e:
-        raise aiowamp.InvalidMessage(f"failed to build message type {msg_cls!r} from message list") from e
+        raise InvalidMessage(f"failed to build message type {msg_cls!r} from message list") from e

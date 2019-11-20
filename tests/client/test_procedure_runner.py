@@ -4,7 +4,7 @@ import logging
 import pytest
 
 import aiowamp
-from aiowamp.client.invocation import AsyncGenRunner, AwaitableRunner, CoroRunner, get_runner_factory
+from aiowamp.client.procedure_runner import AsyncGenRunner, AwaitableRunner, CoroRunner, get_runner_factory
 from tests import mock
 from tests.client.check import check_invocation
 

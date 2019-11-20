@@ -3,7 +3,8 @@ import inspect
 from typing import Any, Callable, Iterable, List, Optional, get_type_hints
 
 import aiowamp
-from aiowamp.client.invocation import ProcedureRunnerABC, get_fn_runner_cls, get_obj_runner_cls
+from aiowamp import InvocationABC, SubscriptionEventABC
+from aiowamp.client.procedure_runner import ProcedureRunnerABC, get_fn_runner_cls, get_obj_runner_cls
 from .args import CommonArg, KWArg, VarKWArg, args_from_signature
 from .code import Code, indent
 
@@ -110,7 +111,7 @@ async def {self.entry_point_fn_name}(args_mixin):
 class ProcedureEntryPoint(CommonEntryPoint):
     @classmethod
     def resolve_special(cls, value: Any) -> Optional[str]:
-        if class_and_subclass(value, aiowamp.InvocationABC):
+        if class_and_subclass(value, InvocationABC):
             return "args_mixin"
 
         return None
@@ -142,7 +143,7 @@ class ProcedureEntryPoint(CommonEntryPoint):
 class EventEntryPoint(CommonEntryPoint):
     @classmethod
     def resolve_special(cls, value: Any) -> Optional[str]:
-        if class_and_subclass(value, aiowamp.SubscriptionEventABC):
+        if class_and_subclass(value, SubscriptionEventABC):
             return "args_mixin"
 
         return None

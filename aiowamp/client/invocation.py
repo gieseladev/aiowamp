@@ -1,27 +1,164 @@
 from __future__ import annotations
 
 import abc
-import asyncio
 import contextlib
 import datetime
-import inspect
 import logging
 import time
-import warnings
-from typing import Any, AsyncGenerator, Awaitable, Callable, Coroutine, Generic, Mapping, Optional, Tuple, Type, \
-    TypeVar, Union
+from typing import Generic, Optional, Tuple, TypeVar, Union
 
 import aiowamp
-from .abstract import ClientABC, InvocationABC
+from aiowamp import InvocationError, URI, set_invocation_error
+from aiowamp.args_mixin import ArgsMixin
+from aiowamp.msg import Error as ErrorMsg, Invocation as InvocationMsg, Yield as YieldMsg
+from aiowamp.uri import INVALID_ARGUMENT
+from .enum import CANCEL_KILL_NO_WAIT
 
-__all__ = ["Invocation",
-           "ProcedureRunnerABC", "CoroRunner", "AsyncGenRunner",
-           "get_fn_runner_cls", "get_obj_runner_cls",
-           "get_runner_factory"]
+__all__ = ["InvocationABC", "Invocation",
+           "InvocationResult", "InvocationProgress"]
 
 log = logging.getLogger(__name__)
 
-ClientT = TypeVar("ClientT", bound=ClientABC)
+ClientT = TypeVar("ClientT", bound="aiowamp.ClientABC")
+
+
+class InvocationABC(ArgsMixin, abc.ABC, Generic[ClientT]):
+    __slots__ = ()
+
+    def __str__(self) -> str:
+        return f"{type(self).__qualname__} {self.request_id}"
+
+    @property
+    @abc.abstractmethod
+    def client(self) -> ClientT:
+        ...
+
+    @property
+    @abc.abstractmethod
+    def request_id(self) -> int:
+        ...
+
+    @property
+    @abc.abstractmethod
+    def registered_procedure(self) -> aiowamp.URI:
+        ...
+
+    @property
+    def procedure(self) -> aiowamp.URI:
+        """Concrete procedure that caused the invocation.
+
+        This will be the same as `registered_procedure` unless the procedure was
+        registered with a pattern-based matching policy.
+        """
+        try:
+            return URI(self.details["procedure"])
+        except KeyError:
+            return self.registered_procedure
+
+    @property
+    @abc.abstractmethod
+    def args(self) -> Tuple[aiowamp.WAMPType, ...]:
+        ...
+
+    @property
+    @abc.abstractmethod
+    def kwargs(self) -> aiowamp.WAMPDict:
+        ...
+
+    @property
+    @abc.abstractmethod
+    def details(self) -> aiowamp.WAMPDict:
+        ...
+
+    @property
+    def may_send_progress(self) -> bool:
+        """Whether or not the caller is willing to receive progressive results."""
+        try:
+            return bool(self.details["receive_progress"])
+        except KeyError:
+            return False
+
+    @property
+    def caller_id(self) -> Optional[int]:
+        """Get the caller's id.
+
+        You can specify the "disclose_caller" option when registering a
+        procedure to force disclosure.
+
+        Returns:
+            WAMP id of the caller, or `None` if not specified.
+        """
+        return self.details.get("caller")
+
+    @property
+    def trust_level(self) -> Optional[int]:
+        """Get the router assigned trust level.
+
+        The trust level 0 means lowest trust, and higher integers represent
+        (application-defined) higher levels of trust.
+
+        Returns:
+            The trust level, or `None` if not specified.
+        """
+        return self.details.get("trustlevel")
+
+    @property
+    @abc.abstractmethod
+    def timeout(self) -> float:
+        """Timeout in seconds.
+
+        `0` if no timeout was provided which means the call doesn't time out.
+        """
+        ...
+
+    @property
+    @abc.abstractmethod
+    def timeout_at(self) -> Optional[datetime.datetime]:
+        """Time at which the invocation will be cancelled.
+
+        `None` if the call doesn't time out.
+
+        Trying to send a message (result, progress, error) after the call is
+        cancelled will raise an exception. Use `.done` to check whether the
+        invocation can send messages.
+        """
+        ...
+
+    @property
+    @abc.abstractmethod
+    def done(self) -> bool:
+        ...
+
+    @property
+    @abc.abstractmethod
+    def interrupt(self) -> Optional[aiowamp.Interrupt]:
+        ...
+
+    @abc.abstractmethod
+    async def send_progress(self, *args: aiowamp.WAMPType,
+                            kwargs: aiowamp.WAMPDict = None,
+                            options: aiowamp.WAMPDict = None) -> None:
+        ...
+
+    @abc.abstractmethod
+    async def send_result(self, *args: aiowamp.WAMPType,
+                          kwargs: aiowamp.WAMPDict = None,
+                          options: aiowamp.WAMPDict = None) -> None:
+        ...
+
+    @abc.abstractmethod
+    async def send_error(self, error: str, *args: aiowamp.WAMPType,
+                         kwargs: aiowamp.WAMPDict = None,
+                         details: aiowamp.WAMPDict = None) -> None:
+        ...
+
+    @abc.abstractmethod
+    def _cancel(self) -> None:
+        ...
+
+    @abc.abstractmethod
+    async def _receive_interrupt(self, interrupt: aiowamp.Interrupt) -> None:
+        ...
 
 
 class Invocation(InvocationABC[ClientT], Generic[ClientT]):
@@ -94,8 +231,8 @@ class Invocation(InvocationABC[ClientT], Generic[ClientT]):
             else:
                 msg = f"missing keyword argument {key!r}"
 
-            aiowamp.set_invocation_error(e, aiowamp.InvocationError(
-                aiowamp.uri.INVALID_ARGUMENT,
+            set_invocation_error(e, InvocationError(
+                INVALID_ARGUMENT,
                 msg,
                 kwargs={"key": key},
             ))
@@ -164,7 +301,7 @@ class Invocation(InvocationABC[ClientT], Generic[ClientT]):
         options = options or {}
         options["progress"] = True
 
-        await self.session.send(aiowamp.msg.Yield(
+        await self.session.send(YieldMsg(
             self.__request_id,
             options,
             list(args) or None,
@@ -183,7 +320,7 @@ class Invocation(InvocationABC[ClientT], Generic[ClientT]):
         else:
             options = {}
 
-        await self.session.send(aiowamp.msg.Yield(
+        await self.session.send(YieldMsg(
             self.__request_id,
             options,
             list(args) or None,
@@ -195,8 +332,8 @@ class Invocation(InvocationABC[ClientT], Generic[ClientT]):
                          details: aiowamp.WAMPDict = None) -> None:
         self.__mark_done()
 
-        await self.session.send(aiowamp.msg.Error(
-            aiowamp.msg.Invocation.message_type,
+        await self.session.send(ErrorMsg(
+            InvocationMsg.message_type,
             self.__request_id,
             details or {},
             error,
@@ -211,385 +348,50 @@ class Invocation(InvocationABC[ClientT], Generic[ClientT]):
         self.__interrupt = interrupt
 
         # if the cancel mode is killnowait the caller won't accept a response.
-        if interrupt.cancel_mode == aiowamp.CANCEL_KILL_NO_WAIT:
+        if interrupt.cancel_mode == CANCEL_KILL_NO_WAIT:
             self._cancel()
 
 
-def get_return_values(result: aiowamp.InvocationHandlerResult) \
-        -> Tuple[Tuple[aiowamp.WAMPType, ...], Optional[Mapping[str, aiowamp.WAMPType]]]:
-    """Unpack the return value of a invocation handler.
+class InvocationResult(ArgsMixin):
+    """Helper class for procedures.
 
-    Handles types according to `aiowamp.InvocationHandlerResult`.
-
-    Args:
-        result: Invocation handler result to be unpacked.
-
-    Returns:
-        2-tuple containing the positional and keyword arguments.
+    Use this to return/yield a result from a `aiowamp.InvocationHandler`
+    containing keyword arguments.
     """
-    if isinstance(result, aiowamp.InvocationResult):
-        return result.args, result.kwargs or None
 
-    if isinstance(result, tuple):
-        return result, None
+    __slots__ = ("args", "kwargs",
+                 "details")
 
-    if result is None:
-        return (), None
+    args: Tuple[aiowamp.WAMPType, ...]
+    """Arguments."""
 
-    return (result,), None
+    kwargs: aiowamp.WAMPDict
+    """Keyword arguments."""
+
+    details: aiowamp.WAMPDict
+    """Details."""
+
+    def __init__(self, *args: aiowamp.WAMPType, **kwargs: aiowamp.WAMPType) -> None:
+        self.args = args
+        self.kwargs = kwargs
+
+        self.details = {}
 
 
-class ProcedureRunnerABC(Awaitable[None], abc.ABC):
-    """Wrapper for procedure code handling results, exceptions, and interrupts.
+class InvocationProgress(InvocationResult):
+    """Helper class for procedures.
 
-    Creating an instance of a procedure runner is akin to starting it.
-    To wait for a runner to finish it can be awaited.
+    Instances of this class can be yielded by procedures to indicate that it
+    it's intended to be sent as a progress.
+
+    Usually, because there's no way to tell whether an async generator has
+    yielded for the last time, aiowamp waits for the next yield before sending
+    a progress result (i.e. it always lags behind one message).
+    When returning an instance of this class however, aiowamp will send it
+    immediately.
+
+    It is possible to abuse this by returning an instance of this class for the
+    final yield. This is not supported by the WAMP protocol and currently
+    results in aiowamp sending an empty final result.
     """
-    __slots__ = ("invocation",
-                 "_loop",
-                 "__task")
-
-    invocation: aiowamp.InvocationABC
-    """Current invocation."""
-
-    _loop: asyncio.AbstractEventLoop
-
-    __task: asyncio.Task
-
-    def __init__(self, invocation: aiowamp.InvocationABC) -> None:
-        """
-        Args:
-            invocation: Invocation
-        """
-        self.invocation = invocation
-
-        self._loop = asyncio.get_running_loop()
-        self.__task = self._loop.create_task(self._run())
-
-        timeout = invocation.timeout
-        if timeout:
-            self._loop.call_later(timeout, self.cancel)
-
-    def __str__(self) -> str:
-        return f"{type(self).__qualname__}({self.invocation})"
-
-    def __await__(self):
-        return self.__task.__await__()
-
-    @abc.abstractmethod
-    def cancel(self) -> None:
-        log.debug("%s: cancelling", self)
-        self.invocation._cancel()
-
-    @abc.abstractmethod
-    async def _run(self) -> None:
-        ...
-
-    @abc.abstractmethod
-    async def interrupt(self, exc: aiowamp.Interrupt) -> None:
-        log.debug("%s: received interrupt %r", self, exc)
-
-        await self.invocation._receive_interrupt(exc)
-
-    async def _send_exception(self, e: Exception) -> None:
-        """Send an exception if the invocation isn't done already.
-
-        The exception is converted to a WAMP error.
-
-        Args:
-            e: Exception to send.
-        """
-        if self.invocation.done:
-            log.debug("%s: already done, not sending error: %r", self, e)
-            return
-
-        err = aiowamp.exception_to_invocation_error(e)
-        log.debug("%s: sending error: %r", self, err)
-        await self.invocation.send_error(err.uri, *err.args or (), kwargs=err.kwargs, details=err.details)
-
-    async def _send_progress(self, result: aiowamp.InvocationHandlerResult) -> None:
-        """Send a progress message if the invocation isn't already done.
-
-        If the caller isn't willing to receive progress results, the result is
-        ignored.
-
-        Args:
-            result: Handler result to send.
-        """
-        if self.invocation.done:
-            log.debug("%s: already done, not sending progress: %r", self, result)
-            return
-
-        if not self.invocation.may_send_progress:
-            log.debug("%s: caller is unwilling to receive progress, discarding: %r", self, result)
-            return
-
-        log.debug("%s: sending progress: %r", self, result)
-        args, kwargs = get_return_values(result)
-        await self.invocation.send_progress(*args, kwargs=kwargs)
-
-    async def _send_result(self, result: aiowamp.InvocationHandlerResult) -> None:
-        """Send a result if the invocation isn't already done.
-
-        Args:
-            result: Handler result to send.
-        """
-        if self.invocation.done:
-            log.debug("%s: already done, not sending result: %r", self, result)
-            return
-
-        log.debug("%s: sending result: %r", self, result)
-        args, kwargs = get_return_values(result)
-        await self.invocation.send_result(*args, kwargs=kwargs)
-
-
-class CoroRunner(ProcedureRunnerABC):
-    __slots__ = ("_coro", "_coro_task",
-                 "_interrupt_fut", "_finish_fut")
-
-    _coro: Coroutine
-    _coro_task: asyncio.Task
-
-    _interrupt_fut: asyncio.Future
-    _finish_fut: asyncio.Future
-
-    def __init__(self, invocation: aiowamp.InvocationABC, coro: Coroutine) -> None:
-        super().__init__(invocation)
-
-        self._coro = coro
-        self._coro_task = self._loop.create_task(coro)
-
-        self._interrupt_fut = self._loop.create_future()
-        self._finish_fut = self._loop.create_future()
-
-    async def __handle_interrupt(self, interrupt: aiowamp.Interrupt) -> None:
-        if self._coro_task.done():
-            log.debug("%s: already done, no point in interrupting", self)
-            return
-
-        self._coro_task.cancel()
-
-        try:
-            result = await self._coro.throw(type(interrupt), interrupt)
-        except StopIteration as e:
-            coro = self._send_result(e.value)
-        except Exception as e:
-            coro = self._send_exception(e)
-        else:
-            coro = self._send_result(result)
-
-        await coro
-        self._finish_fut.set_result(None)
-
-    async def __handle_finish(self) -> None:
-        log.debug("%s: finished", self)
-
-        try:
-            result = await self._coro_task
-        except Exception as e:
-            await self._send_exception(e)
-        else:
-            await self._send_result(result)
-
-        self._finish_fut.set_result(None)
-
-    async def _run(self) -> None:
-        interrupted = False
-
-        def on_interrupt(fut: asyncio.Future) -> None:
-            nonlocal interrupted
-
-            interrupted = True
-            self._loop.create_task(self.__handle_interrupt(fut.result()))
-
-        self._interrupt_fut.add_done_callback(on_interrupt)
-
-        def on_finish(fut: asyncio.Future) -> None:
-            if interrupted:
-                # this is just a RuntimeError because we're awaiting an already
-                # awaited coroutine.
-                fut.exception()
-                return
-
-            self._loop.create_task(self.__handle_finish())
-
-        self._coro_task.add_done_callback(on_finish)
-
-        try:
-            await self._finish_fut
-        finally:
-            self._interrupt_fut.remove_done_callback(on_interrupt)
-            self._coro_task.remove_done_callback(on_finish)
-
-    def cancel(self) -> None:
-        super().cancel()
-
-        self._coro_task.cancel()
-        self._finish_fut.set_result(None)
-
-    async def interrupt(self, exc: aiowamp.Interrupt) -> None:
-        await super().interrupt(exc)
-
-        self._interrupt_fut.set_result(exc)
-
-
-class AsyncGenRunner(ProcedureRunnerABC):
-    __slots__ = ("agen",
-                 "has_pending", "pending_prog",
-                 "_interrupt")
-
-    agen: AsyncGenerator
-
-    has_pending: bool
-    pending_prog: aiowamp.InvocationHandlerResult
-
-    _interrupt: Optional[aiowamp.Interrupt]
-
-    def __init__(self, invocation: aiowamp.InvocationABC, agen: AsyncGenerator) -> None:
-        super().__init__(invocation)
-        self.agen = agen
-
-        self.has_pending = False
-        # pending_prog is only set when has_pending is True, the potential
-        # AttributeError is deliberate.
-
-        self._interrupt = None
-
-    def __repr__(self) -> str:
-        return f"{type(self).__qualname__}({self.invocation!r}, {self.agen!r})"
-
-    def __str__(self) -> str:
-        return f"{type(self).__qualname__}({self.invocation})"
-
-    def __clear_pending(self) -> None:
-        self.has_pending = False
-        del self.pending_prog
-
-    async def __handle_yield(self, prog: aiowamp.InvocationHandlerResult) -> None:
-        log.debug("%s: handling yield: %r", self, prog)
-
-        if self.has_pending:
-            await self._send_progress(self.pending_prog)
-            self.__clear_pending()
-
-        if isinstance(prog, aiowamp.InvocationProgress):
-            # send immediately
-            await self._send_progress(prog)
-        elif isinstance(prog, aiowamp.InvocationResult):
-            await self._send_result(prog)
-        else:
-            self.pending_prog = prog
-            self.has_pending = True
-
-    async def __handle_finish(self) -> None:
-        log.debug("%s: handling finish", self)
-
-        if self.has_pending:
-            await self._send_result(self.pending_prog)
-            self.__clear_pending()
-            return
-
-        if self.invocation.done:
-            return
-
-        warnings.warn("returned no final result, sending an empty an empty result.\n"
-                      "Final yield MUST NOT be an instance of aiowamp.InvocationProgress!",
-                      SyntaxWarning)
-        await self.invocation.send_result()
-
-    async def _run(self) -> None:
-        try:
-            async for handler_result in self.agen:
-                if self._interrupt is None:
-                    await self.__handle_yield(handler_result)
-                    continue
-
-                handler_result = await self.agen.athrow(type(self._interrupt), self._interrupt)
-                await self._send_result(handler_result)
-        except Exception as e:
-            await self._send_exception(e)
-        else:
-            await self.__handle_finish()
-
-    def cancel(self) -> None:
-        super().cancel()
-        self.agen.aclose()
-
-    async def interrupt(self, exc: aiowamp.Interrupt) -> None:
-        await super().interrupt(exc)
-        self._interrupt = exc
-
-
-class AwaitableRunner(ProcedureRunnerABC):
-    __slots__ = ("_awaitable",)
-
-    _awaitable: Awaitable
-
-    def __init__(self, invocation: aiowamp.InvocationABC, awaitable: Awaitable) -> None:
-        super().__init__(invocation)
-        self._awaitable = awaitable
-
-    async def _run(self) -> None:
-        try:
-            result = await self._awaitable
-        except (asyncio.CancelledError, Exception) as e:
-            await self._send_exception(e)
-        else:
-            await self._send_result(result)
-
-    def cancel(self) -> None:
-        super().cancel()
-
-        if isinstance(self._awaitable, asyncio.Future):
-            self._awaitable.cancel()
-
-    async def interrupt(self, exc: aiowamp.Interrupt) -> None:
-        await super().interrupt(exc)
-
-        if isinstance(self._awaitable, asyncio.Future):
-            self._awaitable.cancel()
-
-
-RunnerFactory = Callable[[InvocationABC], ProcedureRunnerABC]
-
-
-def get_fn_runner_cls(handler: aiowamp.InvocationHandler) -> Optional[Type[ProcedureRunnerABC]]:
-    if inspect.iscoroutinefunction(handler):
-        return CoroRunner
-
-    if inspect.isasyncgenfunction(handler):
-        return AsyncGenRunner
-
-    return None
-
-
-def get_obj_runner_cls(value: Any) -> Type[ProcedureRunnerABC]:
-    if inspect.iscoroutine(value):
-        return CoroRunner
-
-    if inspect.isasyncgen(value):
-        return AsyncGenRunner
-
-    if inspect.isawaitable(value):
-        return AwaitableRunner
-
-    raise TypeError(f"unsupported type: {type(value).__qualname__}.\n"
-                    "Function must return a coroutine, async generator, or awaitable object.")
-
-
-def make_lazy_factory(handler: aiowamp.InvocationHandler) -> RunnerFactory:
-    def factory(invocation: InvocationABC):
-        res = handler(invocation)
-        cls = get_obj_runner_cls(res)
-
-        return cls(invocation, res)
-
-    return factory
-
-
-def get_runner_factory(handler: aiowamp.InvocationHandler) -> RunnerFactory:
-    cls = get_fn_runner_cls(handler)
-    if cls:
-        return lambda i: cls(i, handler(i))
-
-    return make_lazy_factory(handler)
+    __slots__ = ()

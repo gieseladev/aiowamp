@@ -2,7 +2,7 @@ import itertools
 from typing import Any, Iterable, Type, Union
 
 import aiowamp
-from aiowamp.client.invocation import get_return_values
+from aiowamp.client.procedure_runner import get_return_values
 from tests import mock
 
 

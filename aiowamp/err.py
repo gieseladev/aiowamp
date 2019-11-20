@@ -1,16 +1,19 @@
-import aiowamp
+from .errors import ErrorResponse, register_error_response
+from .uri import INVALID_ARGUMENT, INVALID_URI, PROCEDURE_ALREADY_EXISTS
+
+__all__ = ["InvalidURI", "ProcedureAlreadyExists", "InvalidArgument"]
 
 
-@aiowamp.register_error_response(aiowamp.uri.INVALID_URI)
-class InvalidURI(aiowamp.ErrorResponse, ValueError):
+@register_error_response(INVALID_URI)
+class InvalidURI(ErrorResponse):
     ...
 
 
-@aiowamp.register_error_response(aiowamp.uri.NO_SUCH_PROCEDURE)
-class NoSuchProcedure(aiowamp.ErrorResponse, LookupError):
+@register_error_response(PROCEDURE_ALREADY_EXISTS)
+class ProcedureAlreadyExists(ErrorResponse):
     ...
 
 
-@aiowamp.register_error_response(aiowamp.uri.INVALID_ARGUMENT)
-class InvalidArgument(aiowamp.ErrorResponse, TypeError):
+@register_error_response(INVALID_ARGUMENT)
+class InvalidArgument(ErrorResponse):
     ...

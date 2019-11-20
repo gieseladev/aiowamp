@@ -1,7 +1,13 @@
 import aiowamp
 
 
+# TODO maybe build a transport which interacts with the console
+
 class MyTransport(aiowamp.TransportABC):
+    @property
+    def open(self) -> bool:
+        return True
+
     async def close(self) -> None:
         ...
 

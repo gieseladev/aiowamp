@@ -2,7 +2,7 @@ import aiowamp
 
 __all__ = ["CLIENT_ROLES"]
 
-CLIENT_ROLES: aiowamp.WAMPDict
+CLIENT_ROLES: "aiowamp.WAMPDict"
 """WAMP roles/features for the aiowamp client."""
 
 CLIENT_ROLES = {

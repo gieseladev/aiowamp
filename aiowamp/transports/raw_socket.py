@@ -2,11 +2,14 @@ import asyncio
 import logging
 import ssl
 import urllib.parse as urlparse
-from typing import Dict, Optional, Type, Union
+from typing import Dict, Optional, Type, Union, overload
 
 import aiowamp
+from aiowamp import CommonTransportConfig, JSONSerializer, MessagePackSerializer, TransportABC, TransportError, \
+    register_transport_factory
 
-__all__ = ["RawSocketTransport", "connect_raw_socket"]
+__all__ = ["RawSocketTransport", "connect_raw_socket",
+           "get_serializer_protocol"]
 
 log = logging.getLogger(__name__)
 
@@ -14,7 +17,7 @@ MAGIC_OCTET = b"\x7F"
 """Magic bytes sent as the first octet of the handshake."""
 
 
-class RawSocketTransport(aiowamp.TransportABC):
+class RawSocketTransport(TransportABC):
     """WAMP transport over raw sockets.
 
     Notes:
@@ -74,6 +77,12 @@ class RawSocketTransport(aiowamp.TransportABC):
                f"serializer={self.serializer!r},recv_limit={self.__recv_limit!r}," \
                f"send_limit={self.__send_limit!r})"
 
+    @property
+    def open(self) -> bool:
+        return not (self.reader.at_eof() or
+                    self.reader.exception() or
+                    self.writer.is_closing())
+
     def start(self) -> None:
         if self.__read_task and not self.__read_task.done():
             raise RuntimeError("read loop already running!")
@@ -91,7 +100,7 @@ class RawSocketTransport(aiowamp.TransportABC):
 
         data = self.serializer.serialize(msg)
         if len(data) > self.__send_limit:
-            raise aiowamp.TransportError("message longer than remote is willing to receive")
+            raise TransportError("message longer than remote is willing to receive")
 
         header = b"\x00" + int_to_bytes(len(data))
 
@@ -115,7 +124,7 @@ class RawSocketTransport(aiowamp.TransportABC):
         length = bytes_to_int(header[1:])
         if length > self.__recv_limit:
             await self.close()
-            raise aiowamp.TransportError("received message bigger than receive limit")
+            raise TransportError("received message bigger than receive limit")
 
         t_type = header[0]
         # regular WAMP message
@@ -145,7 +154,7 @@ class RawSocketTransport(aiowamp.TransportABC):
     async def __read_loop(self) -> None:
         log.debug("%s: starting read loop", self)
 
-        while not (self.reader.at_eof() or self.reader.exception()):
+        while self.open:
             try:
                 await self.__read_once()
             except asyncio.CancelledError:
@@ -200,11 +209,11 @@ def size_to_byte_limit(recv_limit: int) -> int:
 
 
 HANDSHAKE_ERRCODE_EXCEPTIONS = {
-    0: aiowamp.TransportError("illegal error code"),
-    1: aiowamp.TransportError("serializer unsupported"),
-    2: aiowamp.TransportError("maximum message length unacceptable"),
-    3: aiowamp.TransportError("use of reserved bits"),
-    4: aiowamp.TransportError("maximum connection count reached"),
+    0: TransportError("illegal error code"),
+    1: TransportError("serializer unsupported"),
+    2: TransportError("maximum message length unacceptable"),
+    3: TransportError("use of reserved bits"),
+    4: TransportError("maximum connection count reached"),
 }
 
 
@@ -242,19 +251,19 @@ async def perform_client_handshake(reader: asyncio.StreamReader, writer: asyncio
     try:
         resp = await reader.readexactly(4)
     except asyncio.IncompleteReadError as e:
-        raise aiowamp.TransportError("remote closed connection during handshake") from e
+        raise TransportError("remote closed connection during handshake") from e
 
     if log.isEnabledFor(logging.DEBUG):
         log.debug("received handshake response: %s", resp.hex())
 
     # use 1-slice to get bytes instead of int
     if resp[0:1] != MAGIC_OCTET:
-        raise aiowamp.TransportError("received invalid magic octet while performing handshake. "
-                                     f"Expected {MAGIC_OCTET!r}, got {resp[0]}")
+        raise TransportError("received invalid magic octet while performing handshake. "
+                             f"Expected {MAGIC_OCTET!r}, got {resp[0]}")
 
     if resp[2:] != b"\x00\x00":
-        raise aiowamp.TransportError("expected 3rd and 4th octet to be all zeroes (reserved). "
-                                     f"Saw {resp[2:].hex()}")
+        raise TransportError("expected 3rd and 4th octet to be all zeroes (reserved). "
+                             f"Saw {resp[2:].hex()}")
 
     proto_echo = resp[1] & 0xf
     # if the first 4 bits are 0 it's an error response
@@ -263,13 +272,13 @@ async def perform_client_handshake(reader: asyncio.StreamReader, writer: asyncio
         try:
             exc = HANDSHAKE_ERRCODE_EXCEPTIONS[error_code]
         except KeyError:
-            raise aiowamp.TransportError(f"unknown error code: {error_code}") from None
+            raise TransportError(f"unknown error code: {error_code}") from None
         else:
             raise exc
     # router must echo the protocol
     elif proto_echo != protocol:
-        raise aiowamp.TransportError("router didn't echo protocol. "
-                                     f"Expected {protocol}, got {proto_echo}")
+        raise TransportError("router didn't echo protocol. "
+                             f"Expected {protocol}, got {proto_echo}")
 
     recv_limit = byte_limit_to_size(recv_byte_limit)
     send_limit = byte_limit_to_size(resp[1] >> 4)
@@ -341,25 +350,35 @@ async def _connect(url: Union[str, urlparse.ParseResult], serializer: aiowamp.Se
         raise
 
 
-@aiowamp.register_transport_factory("tcp", "tcps",
-                                    "tcp4", "tcp4s",
-                                    "tcp6", "tcp6s",
-                                    "rs", "rss")
+@register_transport_factory("tcp", "tcps",
+                            "tcp4", "tcp4s",
+                            "tcp6", "tcp6s",
+                            "rs", "rss")
 async def _connect_config(config: aiowamp.CommonTransportConfig) -> RawSocketTransport:
-    return await _connect(config.url, config.serializer or aiowamp.JSONSerializer(),
+    return await _connect(config.url, config.serializer or JSONSerializer(),
                           ssl_context=config.ssl_context)
 
 
+@overload
+async def connect_raw_socket(url: Union[str, urlparse.ParseResult], serializer: aiowamp.SerializerABC, *,
+                             ssl_context: Union[ssl.SSLContext, bool] = None,
+                             recv_limit: int = 0) -> RawSocketTransport: ...
+
+
+@overload
+async def connect_raw_socket(config: aiowamp.CommonTransportConfig) -> RawSocketTransport: ...
+
+
 async def connect_raw_socket(*args, **kwargs) -> RawSocketTransport:
-    if args and isinstance(args[0], aiowamp.CommonTransportConfig):
+    if args and isinstance(args[0], CommonTransportConfig):
         return await _connect_config(*args, **kwargs)
 
     return await _connect(*args, **kwargs)
 
 
 _BUILTIN_PROTOCOLS: Dict[Type[aiowamp.SerializerABC], int] = {
-    aiowamp.serializers.JSONSerializer: 1,
-    aiowamp.serializers.MessagePackSerializer: 2,
+    JSONSerializer: 1,
+    MessagePackSerializer: 2,
 }
 
 

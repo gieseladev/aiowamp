@@ -1,7 +1,9 @@
 from typing import NewType
 
-__all__ = ["CancelMode", "CANCEL_SKIP", "CANCEL_KILL", "CANCEL_KILL_NO_WAIT",
-           "InvocationPolicy", "INVOKE_SINGLE", "INVOKE_ROUND_ROBIN", "INVOKE_RANDOM", "INVOKE_FIRST", "INVOKE_LAST"]
+__all__ = ["CancelMode",
+           "CANCEL_SKIP", "CANCEL_KILL", "CANCEL_KILL_NO_WAIT",
+           "InvocationPolicy",
+           "INVOKE_SINGLE", "INVOKE_ROUND_ROBIN", "INVOKE_RANDOM", "INVOKE_FIRST", "INVOKE_LAST"]
 
 CancelMode = NewType("CancelMode", str)
 """Cancel mode used to cancel a call."""

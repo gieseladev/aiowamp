@@ -1,31 +1,89 @@
 from __future__ import annotations
 
+import abc
 import base64
 import hashlib
 import hmac
 import logging
-from typing import Dict, Iterator, Optional
+from typing import ClassVar, Dict, Iterator, Mapping, Optional, Union
 
 import aiowamp
-from .abstract import AuthKeyringABC, AuthMethodABC
+from aiowamp.msg import Authenticate as AuthenticateMsg
 
-__all__ = ["AuthKeyring",
-           # "register_auth_method", "get_auth_method", "load_auth_method",
-           "CRAuth", "TicketAuth", "ScramAuth"]
+__all__ = ["AuthMethodABC",
+           "AuthKeyringABC", "AuthKeyring",
+           "CRAuth", "TicketAuth"]
 
 log = logging.getLogger(__name__)
+
+
+class AuthMethodABC(abc.ABC):
+    __slots__ = ()
+
+    method_name: ClassVar[str]
+
+    def __str__(self) -> str:
+        return f"{type(self).__qualname__} {self.method_name!r}"
+
+    @property
+    @abc.abstractmethod
+    def requires_auth_id(self) -> bool:
+        ...
+
+    @property
+    @abc.abstractmethod
+    def auth_extra(self) -> Optional[aiowamp.WAMPDict]:
+        ...
+
+    @abc.abstractmethod
+    async def authenticate(self, challenge: aiowamp.msg.Challenge) \
+            -> Union[aiowamp.msg.Authenticate, aiowamp.msg.Abort]:
+        ...
+
+    async def check_welcome(self, welcome: aiowamp.msg.Welcome) -> None:
+        pass
+
+
+class AuthKeyringABC(Mapping[str, "aiowamp.AuthMethodABC"], abc.ABC):
+    __slots__ = ()
+
+    def __str__(self) -> str:
+        methods = ", ".join(self)
+        return f"{type(self).__qualname__}({methods})"
+
+    @abc.abstractmethod
+    def __getitem__(self, method: str) -> aiowamp.AuthMethodABC:
+        ...
+
+    @abc.abstractmethod
+    def __len__(self) -> int:
+        ...
+
+    @abc.abstractmethod
+    def __iter__(self) -> Iterator[str]:
+        ...
+
+    @property
+    @abc.abstractmethod
+    def auth_id(self) -> Optional[str]:
+        ...
+
+    @property
+    @abc.abstractmethod
+    def auth_extra(self) -> Optional[aiowamp.WAMPDict]:
+        ...
 
 
 class AuthKeyring(AuthKeyringABC):
     __slots__ = ("__auth_methods",
                  "__auth_id", "__auth_extra")
 
-    __auth_methods: Dict[str, aiowamp.AuthMethodABC]
+    __auth_methods: Dict[str, "aiowamp.AuthMethodABC"]
 
     __auth_id: Optional[str]
     __auth_extra: Optional[aiowamp.WAMPDict]
 
-    def __init__(self, *methods: aiowamp.AuthMethodABC,
+    def __init__(self, *methods: "aiowamp.AuthMethodABC",
                  auth_id: str = None) -> None:
         auth_methods = {}
         auth_extra = {}
@@ -81,44 +139,6 @@ class AuthKeyring(AuthKeyringABC):
     @property
     def auth_extra(self) -> Optional[aiowamp.WAMPDict]:
         return self.__auth_extra
-
-
-# AUTH_METHODS: Dict[str, Type[SerializableAuthMethodABC]] = {}
-#
-#
-# def register_auth_method(*, overwrite: bool = False):
-#     def decorator(cls: Type[SerializableAuthMethodABC]):
-#         try:
-#             method_name = cls.method_name
-#         except AttributeError:
-#             raise NotImplementedError(f"Auth method {cls.__qualname__} does not specify a method_name") from None
-#
-#         if not overwrite and method_name in AUTH_METHODS:
-#             raise ValueError(
-#                 f"method with name {method_name} already defined by {AUTH_METHODS[method_name].__qualname__}."
-#                 f"Use overwrite=True to overwrite.")
-#
-#         AUTH_METHODS[method_name] = cls
-#
-#         return cls
-#
-#     return decorator
-#
-#
-# def get_auth_method(method_name: str) -> Type[SerializableAuthMethodABC]:
-#     try:
-#         return AUTH_METHODS[method_name]
-#     except KeyError:
-#         raise KeyError(f"no auth method with name {method_name!r}") from None
-#
-#
-# def load_auth_method(data: aiowamp.WAMPDict) -> SerializableAuthMethodABC:
-#     try:
-#         method_name = data["method"]
-#     except KeyError:
-#         raise TypeError(f"data doesn't contain method name: {data!r}") from None
-#
-#     return get_auth_method(method_name).load(data)
 
 
 class CRAuth(AuthMethodABC):
@@ -188,7 +208,7 @@ class TicketAuth(AuthMethodABC):
         return None
 
     async def authenticate(self, challenge: aiowamp.msg.Challenge) -> aiowamp.msg.Authenticate:
-        return aiowamp.msg.Authenticate(self.__ticket, {})
+        return AuthenticateMsg(self.__ticket, {})
 
 
 class ScramAuth(AuthMethodABC):
@@ -203,20 +223,3 @@ class ScramAuth(AuthMethodABC):
     @property
     def auth_extra(self) -> aiowamp.WAMPDict:
         return {"nonce": "", "channel_binding": None}
-
-# def _get_value(d: Mapping, key: str, *,
-#                typ: type = None,
-#                default: Any = None) -> Any:
-#     try:
-#         value = d[key]
-#     except KeyError:
-#         if default is not None:
-#             return default
-#
-#         raise TypeError(f"expected {key!r} to be present in {d}") from None
-#
-#     if not isinstance(value, typ):
-#         raise TypeError(f"expected value of {key!r} to be {typ.__qualname__}, "
-#                         f"got {type(value).__qualname__}")
-#
-#     return value

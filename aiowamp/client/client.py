@@ -1,23 +1,228 @@
 from __future__ import annotations
 
+import abc
 import array
 import asyncio
 import contextlib
 import logging
-from typing import AsyncIterator, Awaitable, Dict, MutableMapping, Optional, Tuple, TypeVar
+from typing import Any, AsyncGenerator, AsyncIterator, Awaitable, Callable, Dict, MutableMapping, Optional, Tuple, \
+    TypeVar, Union
 
 import aiowamp
-from .abstract import ClientABC
-from .invocation import ProcedureRunnerABC, RunnerFactory, get_runner_factory
-from .utils import call_async_fn, check_message_response
+from aiowamp import ClientClosed, IDGenerator, Interrupt, URI, exception_to_invocation_error, message_as_type
+from aiowamp.maybe_awaitable import MaybeAwaitable, call_async_fn
+from aiowamp.msg import Call as CallMsg, Error as ErrorMsg, Event as EventMsg, Interrupt as InterruptMsg, \
+    Invocation as InvocationMsg, Publish as PublishMsg, Published as PublishedMsg, Register as RegisterMsg, \
+    Registered as RegisteredMsg, Subscribe as SubscribeMsg, Subscribed as SubscribedMsg, Unregister as UnregisterMsg, \
+    Unregistered as UnregisteredMsg, Unsubscribe as UnsubscribeMsg, Unsubscribed as UnsubscribedMsg
+from aiowamp.uri import INVALID_ARGUMENT
+from .call import Call
+from .enum import CANCEL_KILL_NO_WAIT
+from .event import SubscriptionEvent
+from .invocation import Invocation
+from .procedure_runner import ProcedureRunnerABC, RunnerFactory, get_runner_factory
+from .utils import check_message_response
 
-__all__ = ["Client"]
+__all__ = ["InvocationHandlerResult",
+           "InvocationHandler", "SubscriptionHandler",
+           "ClientABC", "Client"]
 
 log = logging.getLogger(__name__)
+
+InvocationHandlerResult = Union["aiowamp.InvocationResult",
+                                Tuple["aiowamp.WAMPType", ...],
+                                None,
+                                "aiowamp.WAMPType"]
+"""Return value for a procedure.
+
+The most specific return value is an instance of `aiowamp.InvocationResult` 
+which is sent as-is.
+
+Tuples are unpacked as the arguments.
+
+    async def my_procedure():
+        return ("hello", "world")
+        # equal to: aiowamp.InvocationResult("hello", "world")
+
+In order to return an actual `tuple`, wrap it in another tuple:
+
+    async def my_procedure():
+        my_tuple = ("hello", "world")
+        return (my_tuple,)
+        # equal to: aiowamp.InvocationResult(("hello", "world"))
+
+Please note that no built-in serializer can handle tuples, so this shouldn't be
+a common use-case.
+
+Finally, `None` results in an empty response. This is so that bare return 
+statements work the way you would expect. Again, if you really wish to return
+`None` as the first argument, wrap it in a `tuple` or use 
+`aiowamp.InvocationResult`.
+
+Any other value is used as the first and only argument:
+
+    async def my_procedure():
+        return {"hello": "world", "world": "hello"}
+        # equal to: aiowamp.InvocationResult({"hello": "world", "world": "hello"})
+
+
+The only way to set keyword arguments is to use `aiowamp.InvocationResult` 
+explicitly!
+"""
+
+InvocationHandler = Callable[["aiowamp.InvocationABC"],
+                             Union[Awaitable["aiowamp.InvocationHandlerResult"],
+                                   AsyncGenerator["aiowamp.InvocationHandlerResult", None]]]
+"""Type of a procedure function.
+
+Upon invocation, a procedure function will be called with an 
+`aiowamp.InvocationABC` instance. This invocation can be used to get arguments 
+and send results.
+
+It's also possible to send results by returning them. As a rule of thumb, 
+write the procedures the same as how you would write them without WAMP.
+
+For example:
+
+    async def my_procedure(invocation):
+        # invocation objects implement a lot of utility methods. 
+        a, b, c = invocation
+        return sum(a, b, c)
+
+
+As you can see, this procedure returns a single value (namely the sum of the 
+first three arguments passed to the call). aiowamp interprets this as the first 
+argument of the result. Different return values have different 
+interpretations, but they should all work like you would expect them to. 
+For more, please take a look at `aiowamp.InvocationHandlerResult`.
+
+
+aiowamp also supports async generators, which can be used to send progress 
+results:
+
+    async def prog_results(invocation):
+        final_n = invocation.get(0, 100)
+        for i in range(final_n):
+            yield i
+
+        yield final_n
+
+This rather useless procedure sends all numbers between 0 and the first 
+argument, which defaults to 100 if not specified, as progress results.
+The final iteration is then sent as the final result.
+
+The above code has been written to make this point clear, but it would've worked
+the same if we used `range(final_n + 1)` and removed the `yield final_n`.
+
+IMPORTANT:
+aiowamp doesn't know whether the async generator has yielded for the last time, 
+as such, **all results wait for the next yield before being sent**. The first 
+progress will be sent when the second yield statement is reached, the final 
+result is sent when the async generator stops.
+If this is an issue, **there are ways to get around it:**
+
+An instance of `aiowamp.InvocationProgress` can be yielded which will cause the
+progress to be sent immediately.
+The WAMP protocol doesn't support progressive calls without a final result, if
+the last yield of a procedure function is an instance of 
+`aiowamp.InvocationProgress`, then an empty final result will be sent and a 
+warning is issued.
+
+Similarly, the semantics of `aiowamp.InvocationResult` are different in an 
+async generator. When yielding an instance of `aiowamp.InvocationResult` it 
+will be sent as the final result immediately.
+This can be used to perform some actions after the result has been sent.
+"""
+
+SubscriptionHandler = Callable[["aiowamp.SubscriptionEventABC"], MaybeAwaitable[Any]]
+"""Type of a subscription handler function.
+
+The handler receives the `aiowamp.msg.Event` each time it is published.
+When the handler returns an awaitable object, it is awaited.
+The return value is ignored.
+"""
 
 
 # TODO add client shutdown which removes all subs/procedures and waits for all
 #   pending tasks to finish before closing.
+
+
+class ClientABC(abc.ABC):
+    """WAMP Client.
+
+    Implements the publisher, subscriber, caller, and callee roles.
+    """
+    __slots__ = ()
+
+    def __str__(self) -> str:
+        return f"{type(self).__qualname__} {id(self):x}"
+
+    @abc.abstractmethod
+    async def close(self, details: aiowamp.WAMPDict = None, *,
+                    reason: str = None) -> None:
+        """Close the client and the underlying session.
+
+        Args:
+            details: Additional details to send with the close message.
+            reason: URI denoting the reason for closing.
+                Defaults to `aiowamp.uri.CLOSE_NORMAL`.
+        """
+        ...
+
+    @abc.abstractmethod
+    async def register(self, procedure: str, handler: aiowamp.InvocationHandler, *,
+                       disclose_caller: bool = None,
+                       match_policy: aiowamp.MatchPolicy = None,
+                       invocation_policy: aiowamp.InvocationPolicy = None,
+                       options: aiowamp.WAMPDict = None) -> int:
+        ...
+
+    @abc.abstractmethod
+    async def unregister(self, procedure: str, registration_id: int = None) -> None:
+        ...
+
+    @abc.abstractmethod
+    def call(self, procedure: str, *args: aiowamp.WAMPType,
+             kwargs: aiowamp.WAMPDict = None,
+             receive_progress: bool = None,
+             call_timeout: float = None,
+             cancel_mode: aiowamp.CancelMode = None,
+             disclose_me: bool = None,
+             resource_key: str = None,
+             options: aiowamp.WAMPDict = None) -> aiowamp.CallABC:
+        ...
+
+    @abc.abstractmethod
+    async def subscribe(self, topic: str, callback: aiowamp.SubscriptionHandler, *,
+                        match_policy: aiowamp.MatchPolicy = None,
+                        node_key: str = None,
+                        options: aiowamp.WAMPDict = None) -> int:
+        ...
+
+    @abc.abstractmethod
+    async def unsubscribe(self, topic: str, subscription_id: int = None) -> None:
+        """Unsubscribe from the given topic.
+
+        Args:
+            topic: Topic URI to unsubscribe from.
+            subscription_id: Specific subscription id to unsubscribe.
+
+        Raises:
+            KeyError: If not subscribed to the topic.
+        """
+        ...
+
+    @abc.abstractmethod
+    async def publish(self, topic: str, *args: aiowamp.WAMPType,
+                      kwargs: aiowamp.WAMPDict = None,
+                      acknowledge: bool = None,
+                      blackwhitelist: aiowamp.BlackWhiteList = None,
+                      exclude_me: bool = None,
+                      disclose_me: bool = None,
+                      resource_key: str = None,
+                      options: aiowamp.WAMPDict = None) -> None:
+        ...
+
 
 class Client(ClientABC):
     __slots__ = ("session", "id_gen",
@@ -42,7 +247,7 @@ class Client(ClientABC):
 
     def __init__(self, session: aiowamp.SessionABC) -> None:
         self.session = session
-        self.id_gen = aiowamp.IDGenerator()
+        self.id_gen = IDGenerator()
 
         self.__awaiting_reply = {}
         self.__ongoing_calls = {}
@@ -54,7 +259,7 @@ class Client(ClientABC):
         self.__sub_ids = {}
         self.__sub_handlers = {}
 
-        self.session.message_handler.on(callback=self.__handle_message)
+        self.session.add_message_handler(self.__handle_message)
 
     def __repr__(self) -> str:
         return f"{type(self).__qualname__}({self.session!r})"
@@ -68,22 +273,22 @@ class Client(ClientABC):
         except KeyError:
             log.warning("%s: received invocation for unknown registration: %r", self, invocation_msg)
 
-            await self.session.send(aiowamp.msg.Error(
-                aiowamp.msg.Invocation.message_type,
+            await self.session.send(ErrorMsg(
+                InvocationMsg.message_type,
                 invocation_msg.request_id,
                 {},
-                aiowamp.uri.INVALID_ARGUMENT,
+                INVALID_ARGUMENT,
                 [f"client has no procedure for registration {invocation_msg.registration_id}"]
             ))
             return
 
-        invocation = aiowamp.Invocation(self.session, self, invocation_msg, procedure=uri)
+        invocation = Invocation(self.session, self, invocation_msg, procedure=uri)
 
         try:
             runner = runner_factory(invocation)
         except Exception as e:
             log.exception("%s: couldn't start procedure %s", self, runner_factory)
-            err = aiowamp.exception_to_invocation_error(e)
+            err = exception_to_invocation_error(e)
             await invocation.send_error(err.uri, *err.args, kwargs=err.kwargs)
             return
 
@@ -101,20 +306,20 @@ class Client(ClientABC):
             log.info("%s: received interrupt for invocation that doesn't exist", self)
             return
 
-        await runner.interrupt(aiowamp.Interrupt(interrupt_msg.options))
+        await runner.interrupt(Interrupt(interrupt_msg.options))
 
     async def __handle_event(self, event_msg: aiowamp.msg.Event, handler: aiowamp.SubscriptionHandler,
                              topic: aiowamp.URI) -> None:
-        event = aiowamp.SubscriptionEvent(self, event_msg, topic=topic)
+        event = SubscriptionEvent(self, event_msg, topic=topic)
         await call_async_fn(handler, event)
 
     async def __handle_message(self, msg: aiowamp.MessageABC) -> None:
-        invocation = aiowamp.message_as_type(msg, aiowamp.msg.Invocation)
+        invocation = message_as_type(msg, InvocationMsg)
         if invocation:
             await self.__handle_invocation(invocation)
             return
 
-        interrupt = aiowamp.message_as_type(msg, aiowamp.msg.Interrupt)
+        interrupt = message_as_type(msg, InterruptMsg)
         if interrupt:
             await self.__handle_interrupt(interrupt)
             return
@@ -153,7 +358,7 @@ class Client(ClientABC):
             log.warning("%s: message with unexpected request id: %r", self, msg)
 
         # received event
-        event = aiowamp.message_as_type(msg, aiowamp.msg.Event)
+        event = message_as_type(msg, EventMsg)
         if event:
             try:
                 handler, uri = self.__sub_handlers[event.subscription_id]
@@ -181,8 +386,8 @@ class Client(ClientABC):
                 del self.__awaiting_reply[req_id]
 
     async def _cleanup(self) -> None:
-        exc = aiowamp.ClientClosed()
-        self.session.message_handler.off(callback=self.__handle_message)
+        exc = ClientClosed()
+        self.session.remove_message_handler(self.__handle_message)
 
         self.__procedure_ids.clear()
         self.__procedures.clear()
@@ -233,9 +438,9 @@ class Client(ClientABC):
         runner = get_runner_factory(handler)
 
         if match_policy is not None:
-            procedure_uri = aiowamp.URI(procedure, match_policy=match_policy)
+            procedure_uri = URI(procedure, match_policy=match_policy)
         else:
-            procedure_uri = aiowamp.URI.as_uri(procedure)
+            procedure_uri = URI.as_uri(procedure)
 
         if disclose_caller is not None:
             options = _set_value(options, "disclose_caller", disclose_caller)
@@ -248,13 +453,13 @@ class Client(ClientABC):
 
         req_id = next(self.id_gen)
         async with self._expecting_response(req_id) as resp:
-            await self.session.send(aiowamp.msg.Register(
+            await self.session.send(RegisterMsg(
                 req_id,
                 options or {},
                 procedure_uri,
             ))
 
-        registered = check_message_response(await resp, aiowamp.msg.Registered)
+        registered = check_message_response(await resp, RegisteredMsg)
 
         reg_id = registered.registration_id
         _add_to_array(self.__procedure_ids, procedure_uri, reg_id)
@@ -269,9 +474,9 @@ class Client(ClientABC):
 
         req_id = next(self.id_gen)
         async with self._expecting_response(req_id) as resp:
-            await self.session.send(aiowamp.msg.Unregister(req_id, reg_id))
+            await self.session.send(UnregisterMsg(req_id, reg_id))
 
-        check_message_response(await resp, aiowamp.msg.Unregistered)
+        check_message_response(await resp, UnregisteredMsg)
 
     async def unregister(self, procedure: str, registration_id: int = None) -> None:
         if registration_id is None:
@@ -313,16 +518,16 @@ class Client(ClientABC):
             options["runmode"] = "partition"
 
         req_id = next(self.id_gen)
-        call = aiowamp.Call(
+        call = Call(
             self.session,
-            aiowamp.msg.Call(
+            CallMsg(
                 req_id,
                 options or {},
                 procedure,
                 list(args) or None,
                 kwargs,
             ),
-            cancel_mode=cancel_mode or aiowamp.CANCEL_KILL_NO_WAIT
+            cancel_mode=cancel_mode or CANCEL_KILL_NO_WAIT
         )
 
         self.__ongoing_calls[req_id] = call
@@ -348,9 +553,9 @@ class Client(ClientABC):
                         node_key: str = None,
                         options: aiowamp.WAMPDict = None) -> int:
         if match_policy is not None:
-            topic_uri = aiowamp.URI(topic, match_policy=match_policy)
+            topic_uri = URI(topic, match_policy=match_policy)
         else:
-            topic_uri = aiowamp.URI.as_uri(topic)
+            topic_uri = URI.as_uri(topic)
 
         if topic_uri.match_policy:
             options = _set_value(options, "match", topic_uri.match_policy)
@@ -360,13 +565,13 @@ class Client(ClientABC):
 
         req_id = next(self.id_gen)
         async with self._expecting_response(req_id) as resp:
-            await self.session.send(aiowamp.msg.Subscribe(
+            await self.session.send(SubscribeMsg(
                 req_id,
                 options or {},
                 topic_uri,
             ))
 
-        subscribed = check_message_response(await resp, aiowamp.msg.Subscribed)
+        subscribed = check_message_response(await resp, SubscribedMsg)
 
         sub_id = subscribed.subscription_id
         _add_to_array(self.__sub_ids, topic_uri, sub_id)
@@ -380,9 +585,9 @@ class Client(ClientABC):
 
         req_id = next(self.id_gen)
         async with self._expecting_response(req_id) as resp:
-            await self.session.send(aiowamp.msg.Unsubscribe(req_id, sub_id))
+            await self.session.send(UnsubscribeMsg(req_id, sub_id))
 
-        check_message_response(await resp, aiowamp.msg.Unsubscribed)
+        check_message_response(await resp, UnsubscribedMsg)
 
     async def unsubscribe(self, topic: str, subscription_id: int = None) -> None:
         if subscription_id is None:
@@ -426,7 +631,7 @@ class Client(ClientABC):
             options = _set_value(options, "rkey", resource_key)
 
         req_id = next(self.id_gen)
-        send_coro = self.session.send(aiowamp.msg.Publish(
+        send_coro = self.session.send(PublishMsg(
             req_id,
             options or {},
             topic,
@@ -445,7 +650,7 @@ class Client(ClientABC):
         async with self._expecting_response(req_id) as resp:
             await send_coro
 
-        check_message_response(await resp, aiowamp.msg.Published)
+        check_message_response(await resp, PublishedMsg)
 
 
 T = TypeVar("T")

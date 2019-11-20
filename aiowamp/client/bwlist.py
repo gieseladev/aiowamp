@@ -1,9 +1,11 @@
+from __future__ import annotations
+
 import bisect
 from typing import Container, Iterable, List, Optional, Set, TypeVar, Union
 
 import aiowamp
 
-__all__ = ["BWItemType", "BlackWhiteList"]
+__all__ = ["BlackWhiteList"]
 
 BWItemType = Union[int, str]
 

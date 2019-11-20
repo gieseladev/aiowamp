@@ -1,11 +1,12 @@
 import msgpack
 
 import aiowamp
+from aiowamp import SerializerABC, build_message_from_list
 
 __all__ = ["MessagePackSerializer"]
 
 
-class MessagePackSerializer(aiowamp.SerializerABC):
+class MessagePackSerializer(SerializerABC):
     __slots__ = ()
 
     def serialize(self, msg: aiowamp.MessageABC) -> bytes:
@@ -13,4 +14,4 @@ class MessagePackSerializer(aiowamp.SerializerABC):
 
     def deserialize(self, data: bytes) -> aiowamp.MessageABC:
         msg_list = msgpack.unpackb(data)
-        return aiowamp.build_message_from_list(msg_list)
+        return build_message_from_list(msg_list)

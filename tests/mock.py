@@ -20,6 +20,10 @@ class DummyTransport(aiowamp.TransportABC):
 
         self.sent_messages = []
 
+    @property
+    def open(self) -> bool:
+        return not self._closed
+
     async def close(self) -> None:
         assert not self._closed, "already closed"
         self._closed = True
@@ -58,10 +62,11 @@ def get_transport_from_session(s: aiowamp.SessionABC) -> DummyTransport:
 
 def make_dummy_client(session: aiowamp.SessionABC = None, *,
                       session_details: aiowamp.WAMPDict = None) -> aiowamp.Client:
-    c = aiowamp.Client(session or make_dummy_session(session_details))
-    # The client automatically starts the session's receive loop.
-    # This stops the receive loop so we don't have to clean up afterwards.
-    del c.session.message_handler
+    session = session or make_dummy_session(session_details)
+    c = aiowamp.Client(session)
+    # we don't want to clean up!
+    session._Session__receive_task.cancel()
+
     return c
 
 

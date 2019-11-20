@@ -2,9 +2,10 @@ import dataclasses
 import inspect
 import types
 import warnings
-from typing import Any, Callable, List, Optional, Tuple, TypeVar
+from typing import Any, Awaitable, Callable, List, Optional, Tuple, TypeVar
 
 import aiowamp
+from aiowamp import URI
 from aiowamp.args_mixin import ArgsMixin
 from .entry_point import EventEntryPoint, ProcedureEntryPoint
 
@@ -79,7 +80,7 @@ class Handler:
     entry_point_factory: Callable
     """Callable which generates the entry point for the wrapped function."""
 
-    _entry_point: Callable[[ArgsMixin], None] = dataclasses.field(init=False, repr=False, compare=False)
+    _entry_point: Callable[[ArgsMixin], Awaitable[None]] = dataclasses.field(init=False, repr=False, compare=False)
 
     def __str__(self) -> str:
         return f"<function {full_qualname(self.wrapped)} uri={self.uri}>"
@@ -102,17 +103,17 @@ class Handler:
 
         uri = self.uri
 
-        if isinstance(uri, aiowamp.URI):
+        if isinstance(uri, URI):
             match_policy = uri.match_policy
         else:
             match_policy = None
 
-        if match_policy is None and isinstance(prefix, aiowamp.URI):
+        if match_policy is None and isinstance(prefix, URI):
             match_policy = prefix.match_policy
 
         uri = prefix + self.uri
         if match_policy is not None:
-            return aiowamp.URI(uri, match_policy=match_policy)
+            return URI(uri, match_policy=match_policy)
 
         return uri
 
@@ -146,7 +147,7 @@ class Handler:
 
         self.options[key] = value
 
-    def get_entry_point(self) -> Callable[[ArgsMixin], None]:
+    def get_entry_point(self) -> Callable[[ArgsMixin], Awaitable[None]]:
         """Get the entry point function.
 
         The function is only generated once.

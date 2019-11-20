@@ -2,6 +2,8 @@ import textwrap
 from typing import Iterable, List, Optional, Reversible, Type
 
 import aiowamp
+from .message import MessageABC, register_message_cls
+from .uri import URI
 
 __all__ = []
 
@@ -61,7 +63,7 @@ class Attr:
         self.cls_name = cls
 
         if cls == "URI":
-            self.cls = "aiowamp.URI"
+            self.cls = "URI"
         elif cls in ("list", "dict"):
             self.cls = cls
         else:
@@ -102,11 +104,11 @@ class Attr:
 
     def bound_setter(self, obj: str = "self", arg: str = None) -> str:
         arg = arg or self.name
-        return f"{self.bound(obj)}={self.convert(arg)}"
+        return f"{self.bound(obj)} = {self.convert(arg)}"
 
     def bound_raw_setter(self, obj: str = "self", arg: str = None) -> str:
         arg = arg or self.name
-        return f"{self.bound(obj)}={arg}"
+        return f"{self.bound(obj)} = {arg}"
 
 
 OPTIONAL_ATTR_TEMPLATE = """
@@ -135,7 +137,7 @@ def _gen_optional_attr_code(attrs: Reversible[Attr], end_index: int) -> str:
 
 
 MSG_TEMPLATE = """
-class {name}(aiowamp.MessageABC):
+class {name}(MessageABC):
     __slots__ = ({quoted_attrs_list_str},)
     
     message_type = {message_type}
@@ -158,12 +160,12 @@ class {name}(aiowamp.MessageABC):
 def _create_msg_cls(name: str, message_type: int,
                     attrs: Iterable[str],
                     optional_attrs: Iterable[str], *,
-                    globalns: dict = None) -> Type[aiowamp.MessageABC]:
+                    globalns: dict = None) -> Type["aiowamp.MessageABC"]:
     attrs, optional_attrs = list(map(Attr.parse, attrs)), list(map(Attr.parse, optional_attrs))
     all_attrs = [*attrs, *optional_attrs]
 
     indent = 8 * " "
-    bound_attrs_str = f"{message_type!r}," + ",".join(attr.bound() for attr in attrs)
+    bound_attrs_str = f"{message_type!r}, " + ", ".join(attr.bound() for attr in attrs)
     if optional_attrs:
         to_message_list_code = textwrap.indent(
             (f"msg_list = [{bound_attrs_str}]\n" +
@@ -174,8 +176,8 @@ def _create_msg_cls(name: str, message_type: int,
     else:
         to_message_list_code = f"{indent}return [{bound_attrs_str}]"
 
-    init_sig_str = ",".join(attr.name for attr in attrs) + "," + \
-                   ",".join(f"{attr.name}=None" for attr in optional_attrs)
+    init_sig_str = ", ".join(attr.name for attr in attrs) + ", " + \
+                   ", ".join(f"{attr.name}=None" for attr in optional_attrs)
 
     set_attr_lines = ";".join(attr.bound_setter() for attr in attrs) + ";" + \
                      ";".join(attr.bound_raw_setter() for attr in optional_attrs)
@@ -186,7 +188,7 @@ def _create_msg_cls(name: str, message_type: int,
         quoted_attrs_list_str=", ".join(attr.quoted() for attr in all_attrs),
         set_attr_lines=set_attr_lines,
         to_message_list_code=to_message_list_code,
-        repr_attrs_str=",".join(attr.repr() for attr in all_attrs),
+        repr_attrs_str=", ".join(attr.repr() for attr in all_attrs),
     )
 
     loc = {}
@@ -196,7 +198,7 @@ def _create_msg_cls(name: str, message_type: int,
 
 
 def _create_msgs():
-    globalns = {"aiowamp": aiowamp}
+    globalns = {"MessageABC": MessageABC, "URI": URI}
 
     for msg in MSGS:
         if len(msg) == 3:
@@ -212,7 +214,7 @@ def _create_msgs():
         globals()[name] = cls
         __all__.append(name)
 
-        aiowamp.register_message_cls(cls)
+        register_message_cls(cls)
 
 
 _create_msgs()

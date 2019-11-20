@@ -1,16 +1,82 @@
 from __future__ import annotations
 
+import abc
 import asyncio
 import logging
-from typing import Optional, Type, Union
+from typing import Any, AsyncIterator, Awaitable, Callable, Optional, Type, Union
 
 import aiowamp
-from .abstract import CallABC
-from .utils import call_async_fn_background, check_message_response
+from aiowamp import UnexpectedMessageError, is_message_type, message_as_type
+from aiowamp.maybe_awaitable import MaybeAwaitable, call_async_fn_background
+from aiowamp.msg import Cancel as CancelMsg, Error as ErrorMsg, Result as ResultMsg
+from .invocation import InvocationProgress, InvocationResult
+from .utils import check_message_response
 
-__all__ = ["Call"]
+__all__ = ["ProgressHandler",
+           "CallABC", "Call"]
 
 log = logging.getLogger(__name__)
+
+ProgressHandler = Callable[["aiowamp.InvocationProgress"], MaybeAwaitable[Any]]
+"""Type of a progress handler function.
+
+The function is called with the invocation progress instance.
+If a progress handler returns an awaitable object, it is awaited.
+
+The return value is ignored.
+"""
+
+
+class CallABC(Awaitable["aiowamp.InvocationResult"], AsyncIterator["aiowamp.InvocationProgress"], abc.ABC):
+    __slots__ = ()
+
+    def __str__(self) -> str:
+        return f"Call {self.request_id}"
+
+    def __await__(self):
+        return self.result().__await__()
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        progress = await self.next_progress()
+        if progress is None:
+            raise StopAsyncIteration
+
+        return progress
+
+    @property
+    @abc.abstractmethod
+    def request_id(self) -> int:
+        ...
+
+    @property
+    @abc.abstractmethod
+    def done(self) -> bool:
+        ...
+
+    @property
+    @abc.abstractmethod
+    def cancelled(self) -> bool:
+        ...
+
+    @abc.abstractmethod
+    def on_progress(self, handler: aiowamp.ProgressHandler) -> None:
+        ...
+
+    @abc.abstractmethod
+    async def result(self) -> aiowamp.InvocationResult:
+        ...
+
+    @abc.abstractmethod
+    async def next_progress(self) -> Optional[aiowamp.InvocationProgress]:
+        ...
+
+    @abc.abstractmethod
+    async def cancel(self, cancel_mode: aiowamp.CancelMode = None, *,
+                     options: aiowamp.WAMPDict = None) -> None:
+        ...
 
 
 class Call(CallABC):
@@ -99,7 +165,7 @@ class Call(CallABC):
             return
 
         progress = _create_invocation_result(progress_msg.args, progress_msg.kwargs, progress_msg.details,
-                                             cls=aiowamp.InvocationProgress)
+                                             cls=InvocationProgress)
 
         if self.__progress_handler is not None:
             call_async_fn_background(self.__progress_handler,
@@ -114,15 +180,15 @@ class Call(CallABC):
             # already done, no need to handle message
             return True
 
-        result = aiowamp.message_as_type(msg, aiowamp.msg.Result)
+        result = message_as_type(msg, ResultMsg)
         if result and result.details.get("progress"):
             self.__handle_progress(result)
             return False
 
-        if result or aiowamp.is_message_type(msg, aiowamp.msg.Error):
+        if result or is_message_type(msg, ErrorMsg):
             self.__result_fut.set_result(msg)
         else:
-            self.__result_fut.set_exception(aiowamp.UnexpectedMessageError(msg, aiowamp.msg.Result))
+            self.__result_fut.set_exception(UnexpectedMessageError(msg, ResultMsg))
 
         if self.__progress_queue is not None:
             # add none to wake up
@@ -156,7 +222,7 @@ class Call(CallABC):
 
             raise
 
-        result_msg = check_message_response(msg, aiowamp.msg.Result)
+        result_msg = check_message_response(msg, ResultMsg)
         return _create_invocation_result(result_msg.args, result_msg.kwargs, result_msg.details)
 
     async def next_progress(self) -> Optional[aiowamp.InvocationProgress]:
@@ -190,7 +256,7 @@ class Call(CallABC):
         options = options or {}
         options["mode"] = cancel_mode
 
-        await self.session.send(aiowamp.msg.Cancel(self._call_msg.request_id, options))
+        await self.session.send(CancelMsg(self._call_msg.request_id, options))
         try:
             await self.__next_final()
         except Exception:
@@ -200,7 +266,7 @@ class Call(CallABC):
 def _create_invocation_result(args: Optional[aiowamp.WAMPList], kwargs: Optional[aiowamp.WAMPDict],
                               details: aiowamp.WAMPDict, *,
                               cls: Type[aiowamp.InvocationResult] = None) -> aiowamp.InvocationResult:
-    cls = cls or aiowamp.InvocationResult
+    cls = cls or InvocationResult
     instance = cls(*(args or ()), **(kwargs or {}))
     instance.details = details
 

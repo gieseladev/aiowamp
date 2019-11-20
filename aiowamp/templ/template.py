@@ -4,6 +4,7 @@ import urllib.parse as urlparse
 from typing import Any, Awaitable, Callable, Iterable, List, Optional, TypeVar, Union
 
 import aiowamp
+from aiowamp import INVOKE_ROUND_ROBIN, INVOKE_SINGLE, URI, connect
 from .handler import Handler, create_procedure_uri, create_registration_handler, create_subscription_handler, \
     get_handlers_in_instance, set_registration_handler, set_subscription_handler
 
@@ -53,19 +54,19 @@ class Template:
         if not handlers:
             return policy
 
-        if policy == aiowamp.INVOKE_SINGLE:
+        if policy == INVOKE_SINGLE:
             raise TypeError(f"there are multiple procedures for the uri {uri}. "
-                            f"Invocation policy must something other than {aiowamp.INVOKE_SINGLE!r}")
+                            f"Invocation policy must something other than {INVOKE_SINGLE!r}")
 
         policies = tuple(handler.get_option("invoke")
                          for handler in handlers)
 
-        if aiowamp.INVOKE_SINGLE in policies:
+        if INVOKE_SINGLE in policies:
             raise ValueError(f"procedure with uri {uri} already exists and "
-                             f"explicitly uses invocation policy {aiowamp.INVOKE_SINGLE!r}")
+                             f"explicitly uses invocation policy {INVOKE_SINGLE!r}")
 
         if policy is None:
-            policy = aiowamp.INVOKE_ROUND_ROBIN
+            policy = INVOKE_ROUND_ROBIN
 
         for handler, h_policy in zip(handlers, policy):
             if h_policy is None:
@@ -85,7 +86,7 @@ class Template:
                 uri = create_procedure_uri(fn)
 
             if match_policy is not None:
-                uri = aiowamp.URI(uri, match_policy=match_policy)
+                uri = URI(uri, match_policy=match_policy)
 
             invocation_policy = self.__assert_invocation_policy(uri, invocation_policy)
             options = build_options(options,
@@ -103,7 +104,7 @@ class Template:
               node_key: str = None,
               options: aiowamp.WAMPDict = None) -> NoOpDecorator:
         if match_policy is not None:
-            uri = aiowamp.URI(uri, match_policy=match_policy)
+            uri = URI(uri, match_policy=match_policy)
 
         options = build_options(options, nkey=node_key)
 
@@ -122,10 +123,10 @@ class Template:
                             realm: str,
                             serializer: aiowamp.SerializerABC = None,
                             keyring: aiowamp.AuthKeyringABC = None) -> aiowamp.Client:
-        client = await aiowamp.connect(url,
-                                       realm=realm,
-                                       serializer=serializer,
-                                       keyring=keyring)
+        client = await connect(url,
+                               realm=realm,
+                               serializer=serializer,
+                               keyring=keyring)
         await self.apply(client)
 
         return client
@@ -147,7 +148,7 @@ def procedure(uri: str = None, *,
             uri = create_procedure_uri(fn)
 
         if match_policy is not None:
-            uri = aiowamp.URI(uri, match_policy=match_policy)
+            uri = URI(uri, match_policy=match_policy)
 
         handler = create_registration_handler(uri, fn, options)
         set_registration_handler(fn, handler)
@@ -162,7 +163,7 @@ def event(uri: str, *,
           node_key: str = None,
           options: aiowamp.WAMPDict = None) -> NoOpDecorator:
     if match_policy is not None:
-        uri = aiowamp.URI(uri, match_policy=match_policy)
+        uri = URI(uri, match_policy=match_policy)
 
     options = build_options(options, nkey=node_key)
 

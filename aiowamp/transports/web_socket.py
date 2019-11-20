@@ -5,11 +5,13 @@ import websockets
 from websockets.framing import OP_BINARY, OP_TEXT
 
 import aiowamp
+from aiowamp import CommonTransportConfig, JSONSerializer, MessagePackSerializer, SerializerABC, TransportABC, \
+    register_transport_factory
 
 __all__ = ["WebSocketTransport", "connect_web_socket"]
 
 
-class WebSocketTransport(aiowamp.TransportABC):
+class WebSocketTransport(TransportABC):
     """WAMP Transport over web socket.    """
     __slots__ = ("ws_client", "serializer",
                  "__payload_opcode")
@@ -36,6 +38,10 @@ class WebSocketTransport(aiowamp.TransportABC):
 
         self.__payload_opcode = OP_TEXT if payload_text else OP_BINARY
 
+    @property
+    def open(self) -> bool:
+        return self.ws_client.open
+
     async def close(self) -> None:
         await self.ws_client.close()
 
@@ -54,7 +60,7 @@ async def _connect(uri: str,
                    serializer: Union[aiowamp.SerializerABC, Sequence[aiowamp.SerializerABC]] = None,
                    *,
                    ssl_context: ssl.SSLContext = None) -> WebSocketTransport:
-    if isinstance(serializer, aiowamp.SerializerABC):
+    if isinstance(serializer, SerializerABC):
         proto_map = build_protocol_map(serializer)
     elif not serializer:
         proto_map = build_all_protocol_map()
@@ -78,7 +84,7 @@ async def _connect(uri: str,
     )
 
 
-@aiowamp.register_transport_factory("ws", "wss", "http", "https")
+@register_transport_factory("ws", "wss", "http", "https")
 async def _connect_config(config: aiowamp.CommonTransportConfig) -> WebSocketTransport:
     url = config.url
     # switch to corresponding ws
@@ -124,7 +130,7 @@ async def connect_web_socket(uri: str,
 
 
 async def connect_web_socket(*args, **kwargs) -> WebSocketTransport:
-    if args and isinstance(args[0], aiowamp.CommonTransportConfig):
+    if args and isinstance(args[0], CommonTransportConfig):
         return await _connect_config(*args, **kwargs)
 
     return await _connect(*args, **kwargs)
@@ -154,8 +160,8 @@ be sent over a web socket text frame.
 """
 
 _BUILTIN_PROTOCOLS: Dict[Type[aiowamp.SerializerABC], ProtoTuple] = {
-    aiowamp.serializers.JSONSerializer: ("wamp.2.json", True),
-    aiowamp.serializers.MessagePackSerializer: ("wamp.2.msgpack", False),
+    JSONSerializer: ("wamp.2.json", True),
+    MessagePackSerializer: ("wamp.2.msgpack", False),
 }
 
 

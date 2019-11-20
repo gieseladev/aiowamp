@@ -3,15 +3,20 @@ from __future__ import annotations
 import abc
 import asyncio
 import logging
-from typing import Dict, Optional, Set
-
-import aiobservable
+from typing import Any, Callable, Dict, List, Optional, Set
 
 import aiowamp
+from .maybe_awaitable import MaybeAwaitable, call_async_fn_background
+from .message import message_as_type
+from .msg import Goodbye
+from .uri import CLOSE_NORMAL, GOODBYE_AND_OUT
 
-__all__ = ["SessionABC", "Session"]
+__all__ = ["MessageHandler",
+           "SessionABC", "Session"]
 
 log = logging.getLogger(__name__)
+
+MessageHandler = Callable[["aiowamp.MessageABC"], MaybeAwaitable[Any]]
 
 
 class SessionABC(abc.ABC):
@@ -45,16 +50,12 @@ class SessionABC(abc.ABC):
     @property
     @abc.abstractmethod
     def goodbye(self) -> Optional[aiowamp.msg.Goodbye]:
+        """Goodbye message sent by the remote."""
         ...
 
     @property
     @abc.abstractmethod
     def roles(self) -> Set[str]:
-        ...
-
-    @property
-    @abc.abstractmethod
-    def message_handler(self) -> aiobservable.ObservableABC[aiowamp.MessageABC]:
         ...
 
     @abc.abstractmethod
@@ -65,6 +66,14 @@ class SessionABC(abc.ABC):
     @abc.abstractmethod
     async def send(self, msg: aiowamp.MessageABC) -> None:
         """Send a message using the underlying transport."""
+        ...
+
+    @abc.abstractmethod
+    def add_message_handler(self, handler: aiowamp.MessageHandler) -> None:
+        ...
+
+    @abc.abstractmethod
+    def remove_message_handler(self, handler: aiowamp.MessageHandler = None) -> None:
         ...
 
     @abc.abstractmethod
@@ -83,9 +92,10 @@ class Session(SessionABC):
                  "__session_id", "__realm", "__details",
                  "__roles",
                  "__goodbye_fut",
-                 "__message_handler", "__receive_task")
+                 "__msg_handlers", "__receive_task")
 
     transport: aiowamp.TransportABC
+    """Transport used by the session."""
 
     __session_id: int
     __realm: str
@@ -95,10 +105,13 @@ class Session(SessionABC):
 
     __goodbye_fut: Optional[asyncio.Future]
 
-    __message_handler: Optional[aiobservable.Observable[aiowamp.MessageABC]]
+    __msg_handlers: List["aiowamp.MessageHandler"]
     __receive_task: Optional[asyncio.Task]
 
     def __init__(self, transport: aiowamp.TransportABC, session_id: int, realm: str, details: aiowamp.WAMPDict) -> None:
+        if not transport.open:
+            raise RuntimeError(f"transport {transport} must be open")
+
         self.transport = transport
 
         self.__session_id = session_id
@@ -109,7 +122,7 @@ class Session(SessionABC):
 
         self.__goodbye_fut = None
 
-        self.__message_handler = None
+        self.__msg_handlers = []
         self.__receive_task = None
 
     def __repr__(self) -> str:
@@ -138,21 +151,7 @@ class Session(SessionABC):
 
     @property
     def roles(self) -> Set[str]:
-        return set(self.__roles)
-
-    @property
-    def message_handler(self) -> aiobservable.ObservableABC[aiowamp.MessageABC]:
-        if self.__message_handler is None:
-            self.start()
-
-        return self.__message_handler
-
-    @message_handler.deleter
-    def message_handler(self) -> None:
-        if self.__receive_task:
-            self.__receive_task.cancel()
-
-        self.__message_handler = None
+        return set(self.__roles.keys())
 
     def __receive_loop_running(self) -> bool:
         return bool(self.__receive_task and not self.__receive_task.done())
@@ -161,7 +160,6 @@ class Session(SessionABC):
         if self.__receive_loop_running():
             raise RuntimeError("receive loop already running.")
 
-        self.__message_handler = aiobservable.Observable()
         self.__receive_task = asyncio.create_task(self.__receive_loop())
 
     def __get_goodbye_fut(self) -> asyncio.Future:
@@ -174,29 +172,32 @@ class Session(SessionABC):
     async def __handle_goodbye(self, goodbye: aiowamp.msg.Goodbye) -> None:
         # remote initiated goodbye
         if not self.__goodbye_fut:
-            if goodbye.reason == aiowamp.uri.GOODBYE_AND_OUT:
-                raise RuntimeError(f"received {goodbye} confirmation before closing.")
+            if goodbye.reason == GOODBYE_AND_OUT:
+                log.warning(f"received {goodbye} confirmation before closing.")
 
-            await self.send(aiowamp.msg.Goodbye(
+            await self.send(Goodbye(
                 {},
-                aiowamp.uri.GOODBYE_AND_OUT,
+                GOODBYE_AND_OUT,
             ))
 
         self.__get_goodbye_fut().set_result(goodbye)
 
     async def __receive_loop(self) -> None:
-        assert self.__message_handler is not None
-
         log.debug("%s: starting receive loop", self)
 
         while True:
             msg = await self.transport.recv()
-            _ = self.__message_handler.emit(msg)
 
-            goodbye = aiowamp.message_as_type(msg, aiowamp.msg.Goodbye)
+            goodbye = message_as_type(msg, Goodbye)
             if goodbye:
                 await self.__handle_goodbye(goodbye)
                 break
+
+            # goodbye messages are not sent to handlers
+
+            for handler in self.__msg_handlers:
+                call_async_fn_background(handler, "message handler raised an exception",
+                                         msg)
 
         log.debug("%s: exiting receive loop", self)
 
@@ -206,13 +207,14 @@ class Session(SessionABC):
     async def close(self, details: aiowamp.WAMPDict = None, *,
                     reason: aiowamp.URI = None) -> None:
         if not self.__receive_loop_running():
+            log.info("%s: closing before receive loop started", self)
             self.start()
 
         goodbye_fut = self.__get_goodbye_fut()
 
-        await self.send(aiowamp.msg.Goodbye(
+        await self.send(Goodbye(
             details or {},
-            reason or aiowamp.uri.CLOSE_NORMAL,
+            reason or CLOSE_NORMAL,
         ))
 
         await goodbye_fut
@@ -222,6 +224,23 @@ class Session(SessionABC):
             await self.__receive_task
         except Exception:
             log.exception("receive loop raised exception")
+
+    def add_message_handler(self, handler: aiowamp.MessageHandler) -> None:
+        if handler in self.__msg_handlers:
+            raise ValueError(f"{handler} already exists")
+
+        self.__msg_handlers.append(handler)
+        if not self.__receive_loop_running():
+            self.start()
+
+    def remove_message_handler(self, handler: aiowamp.MessageHandler = None) -> None:
+        if handler is None:
+            self.__msg_handlers.clear()
+        else:
+            try:
+                self.__msg_handlers.remove(handler)
+            except ValueError:
+                raise ValueError(f"handler {handler} doesn't exist") from None
 
     def has_role(self, role: str) -> bool:
         # faster than `role in set(self.__roles)`

@@ -5,10 +5,11 @@ import logging
 from typing import Callable, Dict, Optional, Type
 
 import aiowamp
-from aiowamp.args_mixin import ArgsMixin
-from aiowamp.uri_map import URIMap
+from .args_mixin import ArgsMixin
+from .uri import RUNTIME_ERROR, URI
+from .uri_map import URIMap
 
-__all__ = ["Error",
+__all__ = ["BaseError",
            "TransportError",
            "AbortError", "AuthError",
            "InvalidMessage", "UnexpectedMessageError",
@@ -22,7 +23,7 @@ __all__ = ["Error",
 log = logging.getLogger(__name__)
 
 
-class Error(Exception):
+class BaseError(Exception):
     """Base exception for all WAMP related errors.
 
     You will most likely never encounter this error directly, but its
@@ -31,12 +32,12 @@ class Error(Exception):
     __slots__ = ()
 
 
-class TransportError(Error):
+class TransportError(BaseError):
     """Transport level error."""
     __slots__ = ()
 
 
-class AbortError(Error):
+class AbortError(BaseError):
     """Join abort error."""
     __slots__ = ("reason", "details")
 
@@ -51,11 +52,11 @@ class AbortError(Error):
         return f"{self.reason} (details = {self.details})"
 
 
-class AuthError(Error):
+class AuthError(BaseError):
     __slots__ = ()
 
 
-class InvalidMessage(Error):
+class InvalidMessage(BaseError):
     """Exception for invalid messages."""
     __slots__ = ()
 
@@ -68,14 +69,14 @@ class UnexpectedMessageError(InvalidMessage):
     received: aiowamp.MessageABC
     """Message that was received."""
 
-    expected: Type[aiowamp.MessageABC]
+    expected: Type["aiowamp.MessageABC"]
     """Message type that was expected."""
 
     def __str__(self) -> str:
         return f"received message {self.received!r} but expected message of type {self.expected.__qualname__}"
 
 
-class ErrorResponse(Error, ArgsMixin):
+class ErrorResponse(BaseError, ArgsMixin):
     __slots__ = ("message",
                  "uri", "args", "kwargs", "details")
 
@@ -114,15 +115,15 @@ ErrorFactory = Callable[["aiowamp.msg.Error"], Exception]
 """Callable creating an exception from a WAMP error message."""
 
 ERR_RESP_MAP: URIMap[ErrorFactory] = URIMap()
-EXC_URI_MAP: Dict[Type[Exception], aiowamp.URI] = {}
+EXC_URI_MAP: Dict[Type[Exception], "aiowamp.URI"] = {}
 
 
 def register_error_response(uri: str, *,
                             match_policy: aiowamp.MatchPolicy = None):
     if match_policy is not None:
-        uri = aiowamp.URI(uri, match_policy=match_policy)
+        uri = URI(uri, match_policy=match_policy)
     else:
-        uri = aiowamp.URI.as_uri(uri)
+        uri = URI.as_uri(uri)
 
     def decorator(cls: ErrorFactory):
         if not callable(cls):
@@ -150,20 +151,20 @@ def get_exception_uri(exc: Type[Exception]) -> aiowamp.URI:
     return EXC_URI_MAP[exc]
 
 
-class InvocationError(Error):
+class InvocationError(BaseError):
     __slots__ = ("uri",
                  "args", "kwargs",
                  "details")
 
     uri: aiowamp.URI
-    args: Optional[aiowamp.WAMPList]
-    kwargs: Optional[aiowamp.WAMPDict]
-    details: Optional[aiowamp.WAMPDict]
+    args: Optional["aiowamp.WAMPList"]
+    kwargs: Optional["aiowamp.WAMPDict"]
+    details: Optional["aiowamp.WAMPDict"]
 
     def __init__(self, uri: str, *args: aiowamp.WAMPType,
                  kwargs: aiowamp.WAMPDict = None,
                  details: aiowamp.WAMPDict = None) -> None:
-        self.uri = aiowamp.URI(uri)
+        self.uri = URI(uri)
         self.args = list(args) or None
         self.kwargs = kwargs or None
         self.details = details or None
@@ -239,17 +240,17 @@ def exception_to_invocation_error(exc: Exception) -> InvocationError:
         uri = get_exception_uri(type(exc))
     except LookupError:
         log.info(f"no uri registered for exception {type(exc).__qualname__}. "
-                 f"Using {aiowamp.uri.RUNTIME_ERROR!r}")
-        uri = aiowamp.uri.RUNTIME_ERROR
+                 f"Using {RUNTIME_ERROR!r}")
+        uri = RUNTIME_ERROR
 
     return InvocationError(uri, *exc.args)
 
 
-class ClientClosed(Error):
+class ClientClosed(BaseError):
     __slots__ = ()
 
 
-class Interrupt(Error):
+class Interrupt(BaseError):
     __slots__ = ("options",)
 
     options: aiowamp.WAMPDict

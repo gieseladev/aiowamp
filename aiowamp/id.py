@@ -1,3 +1,5 @@
+"""Provides the id generator."""
+
 import abc
 from typing import Iterator
 

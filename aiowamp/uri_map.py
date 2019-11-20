@@ -5,6 +5,7 @@ from typing import Dict, Generic, ItemsView, Iterable, Iterator, List, MutableMa
     ValuesView
 
 import aiowamp
+from .uri import MATCH_PREFIX, MATCH_WILDCARD, URI
 
 __all__ = ["URIMap",
            "URIMapValuesView", "URIMapItemsView"]
@@ -30,7 +31,7 @@ KV_co = TypeVar("KV_co", covariant=True)
 ValueTuple = Tuple[Rank, "aiowamp.URI", KV_co]
 
 
-def iter_values_keys(e: Iterable[ValueTuple]) -> Iterator[aiowamp.URI]:
+def iter_values_keys(e: Iterable[ValueTuple]) -> Iterator["aiowamp.URI"]:
     for _, uri, _ in e:
         yield uri
 
@@ -80,7 +81,7 @@ class URIMap(MutableMapping["aiowamp.URI", KV_co], Generic[KV_co]):
         self._wildcard = []
 
     def __getitem__(self, uri: str) -> KV_co:
-        uri = aiowamp.URI.as_uri(uri)
+        uri = URI.as_uri(uri)
 
         try:
             return self._exact[uri]
@@ -88,43 +89,43 @@ class URIMap(MutableMapping["aiowamp.URI", KV_co], Generic[KV_co]):
             pass
 
         for _, prefix, val in self._prefix:
-            if aiowamp.URI.prefix_match(uri, prefix):
+            if URI.prefix_match(uri, prefix):
                 return val
 
         for _, wildcard, val in self._wildcard:
-            if aiowamp.URI.wildcard_match(uri, wildcard):
+            if URI.wildcard_match(uri, wildcard):
                 return val
 
         raise KeyError(uri)
 
     def __setitem__(self, uri: aiowamp.URI, value: KV_co) -> None:
-        if not isinstance(uri, aiowamp.URI):
+        if not isinstance(uri, URI):
             raise TypeError(f"instance of aiowamp.URI required, not {type(uri).__name__}")
 
         match_policy = uri.match_policy
 
         if match_policy is None:
             self._exact[uri] = value
-        elif match_policy == aiowamp.MATCH_PREFIX:
+        elif match_policy == MATCH_PREFIX:
             rank = rank_prefix(uri)
             insort_values_value(self._prefix, (rank, uri, value))
-        elif match_policy == aiowamp.MATCH_WILDCARD:
+        elif match_policy == MATCH_WILDCARD:
             rank = rank_wildcard(uri)
             insort_values_value(self._wildcard, (rank, uri, value))
         else:
             raise ValueError(f"unknown match policy: {match_policy!r}")
 
     def __delitem__(self, uri: aiowamp.URI) -> None:
-        if not isinstance(uri, aiowamp.URI):
+        if not isinstance(uri, URI):
             raise TypeError(f"instance of aiowamp.URI required, not {type(uri).__name__}")
 
         match_policy = uri.match_policy
 
         if match_policy is None:
             del self._exact[uri]
-        elif match_policy == aiowamp.MATCH_PREFIX:
+        elif match_policy == MATCH_PREFIX:
             remove_values_key(self._prefix, uri)
-        elif match_policy == aiowamp.MATCH_WILDCARD:
+        elif match_policy == MATCH_WILDCARD:
             remove_values_key(self._wildcard, uri)
         else:
             raise ValueError(f"unknown match policy: {match_policy!r}")

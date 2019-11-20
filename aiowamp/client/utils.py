@@ -1,57 +1,23 @@
 from __future__ import annotations
 
-import asyncio
-import inspect
-import logging
-from typing import Callable, Type, TypeVar
+from typing import Type, TypeVar
 
 import aiowamp
+from aiowamp import UnexpectedMessageError, error_to_exception, message_as_type
+from aiowamp.msg import Error as ErrorMsg
 
-__all__ = ["check_message_response", "call_async_fn", "call_async_fn_background"]
+__all__ = ["check_message_response"]
 
-log = logging.getLogger(__name__)
-
-MsgT = TypeVar("MsgT", bound=aiowamp.MessageABC)
+MsgT = TypeVar("MsgT", bound="aiowamp.MessageABC")
 
 
 def check_message_response(msg: aiowamp.MessageABC, ok_type: Type[MsgT]) -> MsgT:
-    ok = aiowamp.message_as_type(msg, ok_type)
+    ok = message_as_type(msg, ok_type)
     if ok:
         return ok
 
-    error = aiowamp.message_as_type(msg, aiowamp.msg.Error)
+    error = message_as_type(msg, ErrorMsg)
     if error:
-        raise aiowamp.error_to_exception(error)
+        raise error_to_exception(error)
 
-    raise aiowamp.UnexpectedMessageError(msg, ok_type)
-
-
-T = TypeVar("T")
-
-
-async def call_async_fn(f: Callable[..., aiowamp.MaybeAwaitable[T]], *args, **kwargs) -> T:
-    """Call function and await result if awaitable.
-
-    Args:
-        f: Function to call.
-        *args: Arguments to pass to the function.
-        **kwargs: Keyword-arguments to pass to the function.
-
-    Returns:
-        The result of the function.
-    """
-    res = f(*args, **kwargs)
-    if inspect.isawaitable(res):
-        res = await res
-
-    return res
-
-
-def call_async_fn_background(f: Callable[..., aiowamp.MaybeAwaitable[T]], msg: str, *args, **kwargs) -> None:
-    async def wrapper():
-        try:
-            await call_async_fn(f, *args, **kwargs)
-        except Exception:
-            log.exception(msg)
-
-    asyncio.create_task(wrapper())
+    raise UnexpectedMessageError(msg, ok_type)
