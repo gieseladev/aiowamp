@@ -3,8 +3,10 @@ from __future__ import annotations
 import abc
 import asyncio
 import contextlib
+import datetime
 import inspect
 import logging
+import time
 import warnings
 from typing import Any, AsyncGenerator, Awaitable, Callable, Coroutine, Generic, Mapping, Optional, Tuple, Type, \
     TypeVar, Union
@@ -25,6 +27,7 @@ ClientT = TypeVar("ClientT", bound=ClientABC)
 class Invocation(InvocationABC[ClientT], Generic[ClientT]):
     __slots__ = ("session",
                  "__client",
+                 "__timeout", "__timeout_at",
                  "__done", "__interrupt",
                  "__procedure", "__request_id",
                  "__args", "__kwargs", "__details")
@@ -70,6 +73,18 @@ class Invocation(InvocationABC[ClientT], Generic[ClientT]):
         self.__kwargs = msg.kwargs or {}
         self.__details = msg.details
 
+        try:
+            self.__timeout = self.__details["timeout"] / 1e3
+        except KeyError:
+            self.__timeout = 0
+
+        # the default is 0 which means no timeout
+        if self.__timeout:
+            ts = time.time() + self.__timeout
+            self.__timeout_at = datetime.datetime.utcfromtimestamp(ts)
+        else:
+            self.__timeout_at = None
+
     def __getitem__(self, key: Union[int, str]) -> aiowamp.WAMPType:
         try:
             return super().__getitem__(key)
@@ -109,6 +124,14 @@ class Invocation(InvocationABC[ClientT], Generic[ClientT]):
     @property
     def details(self) -> aiowamp.WAMPDict:
         return self.__details
+
+    @property
+    def timeout(self) -> float:
+        return self.__timeout
+
+    @property
+    def timeout_at(self) -> Optional[datetime.datetime]:
+        return self.__timeout_at
 
     @property
     def done(self) -> bool:
@@ -181,12 +204,15 @@ class Invocation(InvocationABC[ClientT], Generic[ClientT]):
             kwargs,
         ))
 
+    def _cancel(self) -> None:
+        self.__done = True
+
     async def _receive_interrupt(self, interrupt: aiowamp.Interrupt) -> None:
         self.__interrupt = interrupt
 
         # if the cancel mode is killnowait the caller won't accept a response.
         if interrupt.cancel_mode == aiowamp.CANCEL_KILL_NO_WAIT:
-            self.__done = True
+            self._cancel()
 
 
 def get_return_values(result: aiowamp.InvocationHandlerResult) \
@@ -240,11 +266,20 @@ class ProcedureRunnerABC(Awaitable[None], abc.ABC):
         self._loop = asyncio.get_running_loop()
         self.__task = self._loop.create_task(self._run())
 
+        timeout = invocation.timeout
+        if timeout:
+            self._loop.call_later(timeout, self.cancel)
+
     def __str__(self) -> str:
         return f"{type(self).__qualname__}({self.invocation})"
 
     def __await__(self):
         return self.__task.__await__()
+
+    @abc.abstractmethod
+    def cancel(self) -> None:
+        log.debug("%s: cancelling", self)
+        self.invocation._cancel()
 
     @abc.abstractmethod
     async def _run(self) -> None:
@@ -376,12 +411,21 @@ class CoroRunner(ProcedureRunnerABC):
                 fut.exception()
                 return
 
-            self._interrupt_fut.remove_done_callback(on_interrupt)
             self._loop.create_task(self.__handle_finish())
 
         self._coro_task.add_done_callback(on_finish)
 
-        await self._finish_fut
+        try:
+            await self._finish_fut
+        finally:
+            self._interrupt_fut.remove_done_callback(on_interrupt)
+            self._coro_task.remove_done_callback(on_finish)
+
+    def cancel(self) -> None:
+        super().cancel()
+
+        self._coro_task.cancel()
+        self._finish_fut.set_result(None)
 
     async def interrupt(self, exc: aiowamp.Interrupt) -> None:
         await super().interrupt(exc)
@@ -467,6 +511,10 @@ class AsyncGenRunner(ProcedureRunnerABC):
         else:
             await self.__handle_finish()
 
+    def cancel(self) -> None:
+        super().cancel()
+        self.agen.aclose()
+
     async def interrupt(self, exc: aiowamp.Interrupt) -> None:
         await super().interrupt(exc)
         self._interrupt = exc
@@ -488,6 +536,12 @@ class AwaitableRunner(ProcedureRunnerABC):
             await self._send_exception(e)
         else:
             await self._send_result(result)
+
+    def cancel(self) -> None:
+        super().cancel()
+
+        if isinstance(self._awaitable, asyncio.Future):
+            self._awaitable.cancel()
 
     async def interrupt(self, exc: aiowamp.Interrupt) -> None:
         await super().interrupt(exc)
@@ -527,9 +581,6 @@ def make_lazy_factory(handler: aiowamp.InvocationHandler) -> RunnerFactory:
     def factory(invocation: InvocationABC):
         res = handler(invocation)
         cls = get_obj_runner_cls(res)
-
-        # TODO treat res on typeerror as result, maybe simply return this and
-        #  let the caller handle it
 
         return cls(invocation, res)
 

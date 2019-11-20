@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import abc
+import datetime
 from typing import Any, AsyncGenerator, AsyncIterator, Awaitable, Callable, ClassVar, Generic, Iterator, Mapping, \
     Optional, Tuple, TypeVar, Union
 
@@ -161,6 +162,28 @@ class InvocationABC(ArgsMixin, abc.ABC, Generic[ClientT]):
 
     @property
     @abc.abstractmethod
+    def timeout(self) -> float:
+        """Timeout in seconds.
+
+        `0` if no timeout was provided which means the call doesn't time out.
+        """
+        ...
+
+    @property
+    @abc.abstractmethod
+    def timeout_at(self) -> Optional[datetime.datetime]:
+        """Time at which the invocation will be cancelled.
+
+        `None` if the call doesn't time out.
+
+        Trying to send a message (result, progress, error) after the call is
+        cancelled will raise an exception. Use `.done` to check whether the
+        invocation can send messages.
+        """
+        ...
+
+    @property
+    @abc.abstractmethod
     def done(self) -> bool:
         ...
 
@@ -185,6 +208,10 @@ class InvocationABC(ArgsMixin, abc.ABC, Generic[ClientT]):
     async def send_error(self, error: str, *args: aiowamp.WAMPType,
                          kwargs: aiowamp.WAMPDict = None,
                          details: aiowamp.WAMPDict = None) -> None:
+        ...
+
+    @abc.abstractmethod
+    def _cancel(self) -> None:
         ...
 
     @abc.abstractmethod

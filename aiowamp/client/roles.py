@@ -26,7 +26,7 @@ CLIENT_ROLES = {
     "callee": {
         "features": {
             "progressive_call_results": True,
-            "call_timeout": True,  # TODO
+            "call_timeout": True,
             "call_canceling": True,
             "caller_identification": True,
             "call_trustlevels": True,

@@ -79,6 +79,22 @@ async def test_async_gen_runner_interrupt():
     check_invocation(invocation, (), error=True)
 
 
+async def test_async_gen_runner_cancel():
+    async def gen():
+        yield "a"
+        await asyncio.sleep(0)
+        yield "final"
+
+    invocation = mock.make_dummy_invocation()
+    runner = AsyncGenRunner(invocation, gen())
+    await asyncio.sleep(0)
+
+    runner.cancel()
+    await runner
+
+    assert not mock.get_messages(invocation)
+
+
 async def test_async_gen_runner_interrupt_handle():
     async def gen():
         yield "a"
@@ -124,6 +140,21 @@ async def test_coro_runner_interrupt():
     check_invocation(invocation, (), error=True)
 
 
+async def test_coro_runner_cancel():
+    async def procedure():
+        await asyncio.sleep(50)
+        return "hello world"
+
+    invocation = mock.make_dummy_invocation()
+    runner = CoroRunner(invocation, procedure())
+    await asyncio.sleep(0)
+
+    runner.cancel()
+    await runner
+
+    assert not mock.get_messages(invocation)
+
+
 async def test_coro_runner_interrupt_handle():
     async def procedure():
         try:
@@ -162,3 +193,16 @@ async def test_awaitable_runner_interrupt():
     await runner
 
     check_invocation(invocation, (), error=True)
+
+
+async def test_awaitable_runner_cancel():
+    def a():
+        return asyncio.create_task(asyncio.sleep(3600, "hello world"))
+
+    invocation = mock.make_dummy_invocation()
+    runner = AwaitableRunner(invocation, a())
+
+    runner.cancel()
+    await runner
+
+    assert not mock.get_messages(invocation)

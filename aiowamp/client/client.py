@@ -188,14 +188,8 @@ class Client(ClientABC):
         self.__procedure_ids.clear()
         self.__procedures.clear()
 
-        coros = []
         for procedure in self.__running_procedures.values():
-            coro = procedure.interrupt(aiowamp.Interrupt({
-                "mode": aiowamp.CANCEL_KILL_NO_WAIT
-            }))
-            coros.append(coro)
-
-        await asyncio.gather(*coros)
+            procedure.cancel()
 
         self.__running_procedures.clear()
 
@@ -291,7 +285,7 @@ class Client(ClientABC):
             options = _set_value(options, "receive_progress", receive_progress)
 
         if call_timeout is not None:
-            options = _set_value(options, "timeout", round(1000 * call_timeout))
+            options = _set_value(options, "timeout", round(1e3 * call_timeout))
 
         if disclose_me is not None:
             options = _set_value(options, "disclose_me", disclose_me)
