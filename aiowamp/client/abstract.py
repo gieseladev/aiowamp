@@ -108,7 +108,7 @@ class InvocationABC(ArgsMixin, abc.ABC, Generic[ClientT]):
         registered with a pattern-based matching policy.
         """
         try:
-            return aiowamp.URI.as_uri(self.details["procedure"])
+            return aiowamp.URI(self.details["procedure"])
         except KeyError:
             return self.registered_procedure
 
@@ -379,7 +379,7 @@ class SubscriptionEventABC(ArgsMixin, abc.ABC, Generic[ClientT]):
         subscribed with a pattern-based matching policy.
         """
         try:
-            return aiowamp.URI.as_uri(self.details["topic"])
+            return aiowamp.URI(self.details["topic"])
         except KeyError:
             return self.subscribed_topic
 

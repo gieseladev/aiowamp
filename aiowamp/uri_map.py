@@ -70,7 +70,7 @@ def remove_values_key(e: MutableSequence[ValueTuple], uri: aiowamp.URI) -> None:
 class URIMap(MutableMapping["aiowamp.URI", KV_co], Generic[KV_co]):
     __slots__ = ("_exact", "_prefix", "_wildcard")
 
-    _exact: Dict[aiowamp.URI, KV_co]
+    _exact: Dict[str, KV_co]
     _prefix: List[ValueTuple]
     _wildcard: List[ValueTuple]
 
@@ -87,14 +87,12 @@ class URIMap(MutableMapping["aiowamp.URI", KV_co], Generic[KV_co]):
         except KeyError:
             pass
 
-        prefix_match = aiowamp.URI.prefix_match
         for _, prefix, val in self._prefix:
-            if prefix_match(uri, prefix):
+            if aiowamp.URI.prefix_match(uri, prefix):
                 return val
 
-        wildcard_match = aiowamp.URI.wildcard_match
         for _, wildcard, val in self._wildcard:
-            if wildcard_match(uri, wildcard):
+            if aiowamp.URI.wildcard_match(uri, wildcard):
                 return val
 
         raise KeyError(uri)

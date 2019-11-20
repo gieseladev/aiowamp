@@ -176,7 +176,7 @@ class Invocation(InvocationABC[ClientT], Generic[ClientT]):
             aiowamp.msg.Invocation.message_type,
             self.__request_id,
             details or {},
-            aiowamp.URI.as_uri(error),
+            error,
             list(args) or None,
             kwargs,
         ))

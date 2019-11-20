@@ -12,6 +12,7 @@ __all__ = ["Handler",
            "get_registration_handler", "set_registration_handler",
            "get_subscription_handler", "set_subscription_handler",
            "get_handlers", "get_handlers_in_instance",
+           "create_procedure_uri",
            "create_invocation_entry_point", "create_registration_handler",
            "create_subscription_entry_point", "create_subscription_handler"]
 
@@ -69,7 +70,7 @@ def full_qualname(o: object) -> str:
 
 @dataclasses.dataclass()
 class Handler:
-    uri: aiowamp.URI
+    uri: str
     """URI for the wrapped function."""
     options: Optional[aiowamp.WAMPDict]
     """Options to be passed to the registration/subscription."""
@@ -92,11 +93,28 @@ class Handler:
         Returns:
             URI prefixed with the prefix, unless the prefix is `None`, in which
             case the uri is returned directly.
+
+            The return value will be an instance of `aiowamp.URI` with a match
+            policy if the URI or the prefix is a uri with a match policy.
         """
         if prefix is None:
             return self.uri
 
-        return prefix + self.uri
+        uri = self.uri
+
+        if isinstance(uri, aiowamp.URI):
+            match_policy = uri.match_policy
+        else:
+            match_policy = None
+
+        if match_policy is None and isinstance(prefix, aiowamp.URI):
+            match_policy = prefix.match_policy
+
+        uri = prefix + self.uri
+        if match_policy is not None:
+            return aiowamp.URI(uri, match_policy=match_policy)
+
+        return uri
 
     def get_option(self, key: str) -> Optional[aiowamp.WAMPType]:
         """Get the value of the option with the given key.
@@ -296,16 +314,15 @@ def create_invocation_entry_point(fn: Callable) -> aiowamp.InvocationHandler:
     return ProcedureEntryPoint.from_fn(fn).exec()
 
 
-def create_registration_handler(uri: Optional[str], fn: Callable, options: Optional[aiowamp.WAMPDict]) -> Handler:
-    """Create a new registration handler for the given function."""
+def create_procedure_uri(fn: Callable) -> str:
+    """Generate a uri for the function."""
     fn = ensure_callable(fn)
+    return fn.__name__.lower()
 
-    if uri is not None:
-        uri = aiowamp.URI.as_uri(uri)
-    else:
-        uri = fn.__name__.lower()
 
-    return Handler(uri, options, fn, create_invocation_entry_point)
+def create_registration_handler(uri: str, fn: Callable, options: Optional[aiowamp.WAMPDict]) -> Handler:
+    """Create a new registration handler for the given function."""
+    return Handler(uri, options, ensure_callable(fn), create_invocation_entry_point)
 
 
 def create_subscription_entry_point(fn: Callable) -> aiowamp.SubscriptionHandler:
@@ -324,5 +341,4 @@ def create_subscription_entry_point(fn: Callable) -> aiowamp.SubscriptionHandler
 
 def create_subscription_handler(uri: str, fn: Callable, options: Optional[aiowamp.WAMPDict]) -> Handler:
     """Create a new subscription handler for the given function."""
-    fn = ensure_callable(fn)
-    return Handler(aiowamp.URI.as_uri(uri), options, fn, create_subscription_entry_point)
+    return Handler(uri, options, ensure_callable(fn), create_subscription_entry_point)

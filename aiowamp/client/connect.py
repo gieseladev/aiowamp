@@ -72,7 +72,7 @@ async def join_realm(transport: aiowamp.TransportABC, realm: str, *,
         details["roles"] = roles
 
     await transport.send(aiowamp.msg.Hello(
-        aiowamp.URI.as_uri(realm),
+        realm,
         details,
     ))
 

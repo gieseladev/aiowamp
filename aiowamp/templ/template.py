@@ -4,8 +4,8 @@ import urllib.parse as urlparse
 from typing import Any, Awaitable, Callable, Iterable, List, Optional, TypeVar, Union
 
 import aiowamp
-from .handler import Handler, create_registration_handler, create_subscription_handler, get_handlers_in_instance, \
-    set_registration_handler, set_subscription_handler
+from .handler import Handler, create_procedure_uri, create_registration_handler, create_subscription_handler, \
+    get_handlers_in_instance, set_registration_handler, set_subscription_handler
 
 __all__ = ["Template",
            "procedure", "event",
@@ -78,15 +78,20 @@ class Template:
                   match_policy: aiowamp.MatchPolicy = None,
                   invocation_policy: aiowamp.InvocationPolicy = None,
                   options: aiowamp.WAMPDict = None) -> NoOpDecorator:
-        if uri is not None:
-            invocation_policy = self.__assert_invocation_policy(uri, invocation_policy or options.get("invoke"))
-
-        options = build_options(options,
-                                disclose_caller=disclose_caller,
-                                match=match_policy,
-                                invoke=invocation_policy)
-
         def decorator(fn):
+            nonlocal uri, invocation_policy, options
+
+            if uri is None:
+                uri = create_procedure_uri(fn)
+
+            if match_policy is not None:
+                uri = aiowamp.URI(uri, match_policy=match_policy)
+
+            invocation_policy = self.__assert_invocation_policy(uri, invocation_policy)
+            options = build_options(options,
+                                    disclose_caller=disclose_caller,
+                                    invoke=invocation_policy)
+
             handler = create_registration_handler(uri, fn, options)
             self.__registrations.append(handler)
             return fn
@@ -96,8 +101,8 @@ class Template:
     def event(self, uri: str, *,
               match_policy: aiowamp.MatchPolicy = None,
               options: aiowamp.WAMPDict = None) -> NoOpDecorator:
-        options = build_options(options,
-                                match=match_policy)
+        if match_policy is not None:
+            uri = aiowamp.URI(uri, match_policy=match_policy)
 
         def decorator(fn):
             handler = create_subscription_handler(uri, fn, options)
@@ -130,10 +135,17 @@ def procedure(uri: str = None, *,
               options: aiowamp.WAMPDict = None) -> NoOpDecorator:
     options = build_options(options,
                             disclose_caller=disclose_caller,
-                            match=match_policy,
                             invoke=invocation_policy)
 
     def decorator(fn):
+        nonlocal uri
+
+        if uri is None:
+            uri = create_procedure_uri(fn)
+
+        if match_policy is not None:
+            uri = aiowamp.URI(uri, match_policy=match_policy)
+
         handler = create_registration_handler(uri, fn, options)
         set_registration_handler(fn, handler)
 
@@ -145,8 +157,8 @@ def procedure(uri: str = None, *,
 def event(uri: str, *,
           match_policy: aiowamp.MatchPolicy = None,
           options: aiowamp.WAMPDict = None) -> NoOpDecorator:
-    options = build_options(options,
-                            match=match_policy)
+    if match_policy is not None:
+        uri = aiowamp.URI(uri, match_policy=match_policy)
 
     def decorator(fn):
         handler = create_subscription_handler(uri, fn, options)

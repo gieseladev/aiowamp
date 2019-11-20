@@ -15,7 +15,6 @@ __all__ = ["Client"]
 log = logging.getLogger(__name__)
 
 
-# TODO allow URI.match_policy to be set.
 # TODO add client shutdown which removes all subs/procedures and waits for all
 #   pending tasks to finish before closing.
 
@@ -36,10 +35,10 @@ class Client(ClientABC):
 
     # TODO can have multiple procedures with the same uri
     # TODO same for subs
-    __procedure_ids: Dict[aiowamp.URI, int]
+    __procedure_ids: Dict[str, int]
     __procedures: Dict[int, Tuple[RunnerFactory, aiowamp.URI]]
 
-    __sub_ids: Dict[aiowamp.URI, int]
+    __sub_ids: Dict[str, int]
     __sub_handlers: Dict[int, Tuple[aiowamp.SubscriptionHandler, aiowamp.URI]]
 
     def __init__(self, session: aiowamp.SessionABC) -> None:
@@ -219,26 +218,30 @@ class Client(ClientABC):
         Returns:
             Procedure id. `None`, if no registration for the procedure.
         """
-        return self.__procedure_ids.get(aiowamp.URI.as_uri(procedure))
+        return self.__procedure_ids.get(procedure)
 
     async def register(self, procedure: str, handler: aiowamp.InvocationHandler, *,
                        disclose_caller: bool = None,
                        match_policy: aiowamp.MatchPolicy = None,
                        invocation_policy: aiowamp.InvocationPolicy = None,
                        options: aiowamp.WAMPDict = None) -> None:
+        if match_policy is not None:
+            procedure_uri = aiowamp.URI(procedure, match_policy=match_policy)
+        else:
+            procedure_uri = aiowamp.URI.as_uri(procedure)
+
         # get runner factory up here already to catch errors early
         runner = get_runner_factory(handler)
 
         if disclose_caller is not None:
             options = _set_value(options, "disclose_caller", disclose_caller)
 
-        if match_policy is not None:
-            options = _set_value(options, "match", match_policy)
+        if procedure_uri.match_policy is not None:
+            options = _set_value(options, "match", procedure_uri.match_policy)
 
         if invocation_policy is not None:
             options = _set_value(options, "invoke", invocation_policy)
 
-        procedure_uri = aiowamp.URI.as_uri(procedure)
         req_id = next(self.id_gen)
         async with self._expecting_response(req_id) as resp:
             await self.session.send(aiowamp.msg.Register(
@@ -255,7 +258,7 @@ class Client(ClientABC):
 
     async def unregister(self, procedure: str) -> None:
         try:
-            reg_id = self.__procedure_ids.pop(aiowamp.URI.as_uri(procedure))
+            reg_id = self.__procedure_ids.pop(procedure)
         except KeyError:
             raise KeyError(f"no procedure registered for {procedure!r}") from None
 
@@ -290,7 +293,7 @@ class Client(ClientABC):
             aiowamp.msg.Call(
                 req_id,
                 options or {},
-                aiowamp.URI.as_uri(procedure),
+                procedure,
                 list(args) or None,
                 kwargs,
             ),
@@ -310,15 +313,18 @@ class Client(ClientABC):
         Returns:
             Subscription id. `None`, if not subscribed to the topic.
         """
-        return self.__sub_ids.get(aiowamp.URI.as_uri(topic))
+        return self.__sub_ids.get(topic)
 
     async def subscribe(self, topic: str, callback: aiowamp.SubscriptionHandler, *,
                         match_policy: aiowamp.MatchPolicy = None,
                         options: aiowamp.WAMPDict = None) -> None:
-        topic_uri = aiowamp.URI.as_uri(topic)
+        if match_policy is not None:
+            topic_uri = aiowamp.URI(topic, match_policy=match_policy)
+        else:
+            topic_uri = aiowamp.URI.as_uri(topic)
 
-        if match_policy:
-            options = _set_value(options, "match", match_policy)
+        if topic_uri.match_policy:
+            options = _set_value(options, "match", topic_uri.match_policy)
 
         req_id = next(self.id_gen)
         async with self._expecting_response(req_id) as resp:
@@ -339,7 +345,7 @@ class Client(ClientABC):
         # where we still receive events but don't have a handler but that's at
         # least better than the alternative.
         try:
-            sub_id = self.__sub_ids.pop(aiowamp.URI.as_uri(topic))
+            sub_id = self.__sub_ids.pop(topic)
         except KeyError:
             raise KeyError(f"not subscribed to {topic!r}") from None
 
@@ -375,7 +381,7 @@ class Client(ClientABC):
         send_coro = self.session.send(aiowamp.msg.Publish(
             req_id,
             options or {},
-            aiowamp.URI.as_uri(topic),
+            topic,
             list(args) or None,
             kwargs,
         ))

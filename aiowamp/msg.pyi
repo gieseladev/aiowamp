@@ -22,7 +22,7 @@ class Hello(_StubMessage):
     realm: aiowamp.URI
     details: aiowamp.WAMPDict
 
-    def __init__(self, realm: aiowamp.URI, details: aiowamp.WAMPDict) -> None:
+    def __init__(self, realm: str, details: aiowamp.WAMPDict) -> None:
         ...
 
 
@@ -38,7 +38,7 @@ class Abort(_StubMessage):
     details: aiowamp.WAMPDict
     reason: aiowamp.URI
 
-    def __init__(self, details: aiowamp.WAMPDict, reason: aiowamp.URI) -> None:
+    def __init__(self, details: aiowamp.WAMPDict, reason: str) -> None:
         ...
 
 
@@ -62,7 +62,7 @@ class Goodbye(_StubMessage):
     details: aiowamp.WAMPDict
     reason: aiowamp.URI
 
-    def __init__(self, details: aiowamp.WAMPDict, reason: aiowamp.URI) -> None:
+    def __init__(self, details: aiowamp.WAMPDict, reason: str) -> None:
         ...
 
 
@@ -74,7 +74,7 @@ class Error(_StubMessage):
     args: Optional[aiowamp.WAMPList]
     kwargs: Optional[aiowamp.WAMPDict]
 
-    def __init__(self, msg_type: int, request_id: int, details: aiowamp.WAMPDict, error: aiowamp.URI,
+    def __init__(self, msg_type: int, request_id: int, details: aiowamp.WAMPDict, error: str,
                  args: aiowamp.WAMPList = None, kwargs: aiowamp.WAMPDict = None) -> None:
         ...
 
@@ -86,7 +86,7 @@ class Publish(_StubMessage):
     args: Optional[aiowamp.WAMPList]
     kwargs: Optional[aiowamp.WAMPDict]
 
-    def __init__(self, request_id: int, options: aiowamp.WAMPDict, topic: aiowamp.URI,
+    def __init__(self, request_id: int, options: aiowamp.WAMPDict, topic: str,
                  args: aiowamp.WAMPList = None, kwargs: aiowamp.WAMPDict = None) -> None:
         ...
 
@@ -104,7 +104,7 @@ class Subscribe(_StubMessage):
     options: aiowamp.WAMPDict
     topic: aiowamp.URI
 
-    def __init__(self, request_id: int, options: aiowamp.WAMPDict, topic: aiowamp.URI) -> None:
+    def __init__(self, request_id: int, options: aiowamp.WAMPDict, topic: str) -> None:
         ...
 
 
@@ -150,7 +150,7 @@ class Call(_StubMessage):
     args: Optional[aiowamp.WAMPList]
     kwargs: Optional[aiowamp.WAMPDict]
 
-    def __init__(self, request_id: int, options: aiowamp.WAMPDict, procedure: aiowamp.URI,
+    def __init__(self, request_id: int, options: aiowamp.WAMPDict, procedure: str,
                  args: aiowamp.WAMPList = None, kwargs: aiowamp.WAMPDict = None) -> None:
         ...
 
@@ -179,7 +179,7 @@ class Register(_StubMessage):
     options: aiowamp.WAMPDict
     procedure: aiowamp.URI
 
-    def __init__(self, request_id: int, options: aiowamp.WAMPDict, procedure: aiowamp.URI) -> None:
+    def __init__(self, request_id: int, options: aiowamp.WAMPDict, procedure: str) -> None:
         ...
 
 

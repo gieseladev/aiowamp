@@ -42,9 +42,6 @@ class URI(str):
     def split_components(self) -> Tuple[str]:
         return tuple(self.split("."))
 
-    def matches_self(self, other: str) -> bool:
-        return self.policy_match(self.match_policy, self, other)
-
     @classmethod
     def policy_match(cls, policy: MatchPolicy, uri: str, other: str) -> bool:
         if policy is None:

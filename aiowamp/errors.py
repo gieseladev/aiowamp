@@ -117,8 +117,12 @@ ERR_RESP_MAP: URIMap[ErrorFactory] = URIMap()
 EXC_URI_MAP: Dict[Type[Exception], aiowamp.URI] = {}
 
 
-def register_error_response(uri: str):
-    uri = aiowamp.URI.as_uri(uri)
+def register_error_response(uri: str, *,
+                            match_policy: aiowamp.MatchPolicy = None):
+    if match_policy is not None:
+        uri = aiowamp.URI(uri, match_policy=match_policy)
+    else:
+        uri = aiowamp.URI.as_uri(uri)
 
     def decorator(cls: ErrorFactory):
         if not callable(cls):
@@ -159,7 +163,7 @@ class InvocationError(Error):
     def __init__(self, uri: str, *args: aiowamp.WAMPType,
                  kwargs: aiowamp.WAMPDict = None,
                  details: aiowamp.WAMPDict = None) -> None:
-        self.uri = aiowamp.URI.as_uri(uri)
+        self.uri = aiowamp.URI(uri)
         self.args = list(args) or None
         self.kwargs = kwargs or None
         self.details = details or None
