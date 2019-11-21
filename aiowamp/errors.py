@@ -204,7 +204,7 @@ class InvocationError(BaseError):
 ATTACHED_ERR_KEY = "__invocation_error__"
 
 
-def set_invocation_error(exc: Exception, err: InvocationError) -> None:
+def set_invocation_error(exc: Exception, err: aiowamp.InvocationError) -> None:
     """Attach an invocation error to an exception.
 
     This makes it possible to raise a seemingly normal python `Exception` while
