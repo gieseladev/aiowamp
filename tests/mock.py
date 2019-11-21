@@ -87,7 +87,7 @@ def make_dummy_invocation(msg: aiowamp.msg.Invocation = None, procedure: str = "
 
     client = make_dummy_client(session, session_details=session_details)
     return aiowamp.Invocation(client.session, client, msg,
-                              procedure=aiowamp.URI.as_uri(procedure))
+                              procedure=aiowamp.URI.cast(procedure))
 
 
 def get_transport_from_invocation(i: aiowamp.InvocationABC) -> DummyTransport:
@@ -105,7 +105,7 @@ def make_dummy_subscription_event(msg: aiowamp.msg.Invocation = None, topic: str
     msg = msg or aiowamp.msg.Event(0, 0, details, args, kwargs)
 
     return aiowamp.SubscriptionEvent(make_dummy_client(session, session_details=session_details), msg,
-                                     topic=aiowamp.URI.as_uri(topic))
+                                     topic=aiowamp.URI.cast(topic))
 
 
 def get_transport_from_subscription_event(e: aiowamp.SubscriptionEventABC) -> DummyTransport:

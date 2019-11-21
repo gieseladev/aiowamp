@@ -81,7 +81,7 @@ class URIMap(MutableMapping["aiowamp.URI", KV_co], Generic[KV_co]):
         self._wildcard = []
 
     def __getitem__(self, uri: str) -> KV_co:
-        uri = URI.as_uri(uri)
+        uri = URI.cast(uri)
 
         try:
             return self._exact[uri]

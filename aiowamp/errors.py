@@ -123,7 +123,7 @@ def register_error_response(uri: str, *,
     if match_policy is not None:
         uri = URI(uri, match_policy=match_policy)
     else:
-        uri = URI.as_uri(uri)
+        uri = URI.cast(uri)
 
     def decorator(cls: ErrorFactory):
         if not callable(cls):

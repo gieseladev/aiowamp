@@ -447,7 +447,7 @@ class Client(ClientABC):
         if match_policy is not None:
             procedure_uri = URI(procedure, match_policy=match_policy)
         else:
-            procedure_uri = URI.as_uri(procedure)
+            procedure_uri = URI.cast(procedure)
 
         if disclose_caller is not None:
             options = _set_value(options, "disclose_caller", disclose_caller)
@@ -562,7 +562,7 @@ class Client(ClientABC):
         if match_policy is not None:
             topic_uri = URI(topic, match_policy=match_policy)
         else:
-            topic_uri = URI.as_uri(topic)
+            topic_uri = URI.cast(topic)
 
         if topic_uri.match_policy:
             options = _set_value(options, "match", topic_uri.match_policy)

@@ -1,4 +1,4 @@
-from typing import NewType, Optional, Tuple, Type, TypeVar
+from typing import NewType, Optional, Type, TypeVar
 
 __all__ = ["MatchPolicy", "MATCH_PREFIX", "MATCH_WILDCARD",
            "URI"]
@@ -7,7 +7,41 @@ MatchPolicy = NewType("MatchPolicy", str)
 """Match policy for URIs."""
 
 MATCH_PREFIX = MatchPolicy("prefix")
+"""
+Any uri that has the pattern as a prefix will match.
+
+Examples:
+    With "com.myapp.myobject1" as the prefix pattern ...
+    
+    The following uris match:
+        - com.myapp.myobject1.myprocedure1
+        - com.myapp.myobject1-mysubobject1
+        - com.myapp.myobject1.mysubobject1.myprocedure1
+        - com.myapp.myobject1
+    
+    And these don't:
+        - com.myapp.myobject2
+        - com.myapp.myobject
+"""
+
 MATCH_WILDCARD = MatchPolicy("wildcard")
+"""
+Wildcard patterns have empty components, which are treated as wildcards.
+Any uri that matches all specified components and fills the wildcard components
+matches. 
+
+Examples:
+    With "com.myapp..myprocedure1" as the wildcard pattern ...
+    
+    The following uris match:
+        - com.myapp.myobject1.myprocedure1
+        - com.myapp.myobject2.myprocedure1
+    
+    And these don't:
+        - com.myapp.myobject1.myprocedure1.mysubprocedure1
+        - com.myapp.myobject1.myprocedure2
+        - com.myapp2.myobject1.myprocedure1
+"""
 
 T = TypeVar("T")
 
@@ -28,15 +62,35 @@ class URI(str):
     __slots__ = ("match_policy",)
 
     match_policy: Optional[MatchPolicy]
+    """Match policy passed to the instance."""
 
     def __new__(cls: Type[T], uri: str, *,
                 match_policy: MatchPolicy = None) -> T:
+        """Create a new uri.
+
+        Args:
+            uri: URI to set the value to.
+            match_policy: Match policy to use for the URI.
+                Defaults to `None`.
+
+        Returns:
+            New uri instance.
+        """
         self = super().__new__(cls, uri)
         self.match_policy = match_policy
         return self
 
     @classmethod
-    def as_uri(cls: Type[T], uri: str) -> T:
+    def cast(cls: Type[T], uri: str) -> T:
+        """Cast the string to a uri.
+
+        Args:
+            uri: URI to cast.
+
+        Returns:
+            If the uri is already an instance of URI, it is returned directly.
+            Otherwise a new URI is created.
+        """
         if isinstance(uri, cls):
             return uri
 
@@ -50,11 +104,21 @@ class URI(str):
 
         return f"URI({str(self)!r}{match_str})"
 
-    def split_components(self) -> Tuple[str]:
-        return tuple(self.split("."))
-
     @classmethod
     def policy_match(cls, policy: MatchPolicy, uri: str, other: str) -> bool:
+        """Check if a uri matches another based on the policy.
+
+        Args:
+            policy: Matching policy to use.
+            uri: URI to be checked.
+            other: URI to check against (i.e. the pattern).
+
+        Returns:
+            Whether the uri matches the pattern "other".
+
+        Raises:
+            ValueError: If an invalid policy was specified.
+        """
         if policy is None:
             return uri == other
         elif policy == MATCH_WILDCARD:
@@ -77,6 +141,9 @@ class URI(str):
         """
         if not uri.startswith(prefix):
             return False
+
+        # FIXME this implementation seems contrary to the definition, but it's
+        #  the only way I can think of to pass the examples provided...
 
         try:
             next_char = uri[len(prefix)]
