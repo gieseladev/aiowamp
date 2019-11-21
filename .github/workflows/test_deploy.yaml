@@ -54,96 +54,101 @@ jobs:
           name: dist-standard
           path: dist
 
-  build-windows:
-    name: Build Windows dist for Python ${{ matrix.python-version }}
-    needs: test
-    runs-on: windows-latest
-    strategy:
-      matrix:
-        python-version:
-          - "3.7"
-    #          - "3.8"
-    steps:
-      - name: Install MinGW using Conda
-        run: $CONDA/Scripts/conda install m2w64-gcc
-        shell: bash
-
-      - uses: actions/checkout@v1
-
-      - name: Setup Python
-        uses: actions/setup-python@v1
-        with:
-          python-version: ${{ matrix.python-version }}
-
-      - name: Install dependencies
-        run: |
-          pip install -U pipenv
-          pipenv install --dev --deploy
-
-      - name: Build distribution
-        run: CC=$CONDA/Library/mingw-w64/bin/gcc.exe pipenv run build_nuitka
-        shell: bash
-
-      - uses: actions/upload-artifact@v1
-        with:
-          name: dist-windows-${{ matrix.python-version }}
-          path: dist
-
-
-  build-linux:
-    name: Build Linux dist for ${{ matrix.python-version }}
-    needs: test
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version:
-          - "cp37-cp37m"
-          - "cp38-cp38"
-    steps:
-      - uses: actions/checkout@v1
-
-      - name: Build distribution
-        uses: ./.github/actions/build-nuitka-wheel
-        with:
-          tag: ${{ matrix.python-version }}
-
-      - uses: actions/upload-artifact@v1
-        with:
-          name: dist-linux-${{ matrix.python-version }}
-          path: dist
+  #  build-windows:
+  #    name: Build Windows dist for Python ${{ matrix.python-version }}
+  #    needs: test
+  #    runs-on: windows-latest
+  #    strategy:
+  #      matrix:
+  #        python-version:
+  #          - "3.7"
+  #    #          - "3.8"
+  #    steps:
+  #      - name: Install MinGW using Conda
+  #        run: $CONDA/Scripts/conda install m2w64-gcc
+  #        shell: bash
+  #
+  #      - uses: actions/checkout@v1
+  #
+  #      - name: Setup Python
+  #        uses: actions/setup-python@v1
+  #        with:
+  #          python-version: ${{ matrix.python-version }}
+  #
+  #      - name: Install dependencies
+  #        run: |
+  #          pip install -U pipenv
+  #          pipenv install --dev --deploy
+  #
+  #      - name: Build distribution
+  #        run: CC=$CONDA/Library/mingw-w64/bin/gcc.exe pipenv run build_nuitka
+  #        shell: bash
+  #
+  #      - uses: actions/upload-artifact@v1
+  #        with:
+  #          name: dist-windows-${{ matrix.python-version }}
+  #          path: dist
+  #
+  #
+  #  build-linux:
+  #    name: Build Linux dist for ${{ matrix.python-version }}
+  #    needs: test
+  #    runs-on: ubuntu-latest
+  #    strategy:
+  #      matrix:
+  #        python-version:
+  #          - "cp37-cp37m"
+  #          - "cp38-cp38"
+  #    steps:
+  #      - uses: actions/checkout@v1
+  #
+  #      - name: Build distribution
+  #        uses: ./.github/actions/build-nuitka-wheel
+  #        with:
+  #          tag: ${{ matrix.python-version }}
+  #
+  #      - uses: actions/upload-artifact@v1
+  #        with:
+  #          name: dist-linux-${{ matrix.python-version }}
+  #          path: dist
 
 
   deploy:
+    if: github.event_name == 'release'
     name: Publish
     needs:
       - build-standard
-      - build-windows
-      - build-linux
+    #      - build-windows
+    #      - build-linux
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v1
         with:
           name: dist-standard
           path: dist
-      - uses: actions/download-artifact@v1
-        with:
-          name: dist-windows-3.7
-          path: dist
-      - uses: actions/download-artifact@v1
-        with:
-          name: dist-linux-cp37-cp37m
-          path: dist
-      - uses: actions/download-artifact@v1
-        with:
-          name: dist-linux-cp38-cp38
-          path: dist
+      #      - uses: actions/download-artifact@v1
+      #        with:
+      #          name: dist-windows-3.7
+      #          path: dist
+      #      - uses: actions/download-artifact@v1
+      #        with:
+      #          name: dist-linux-cp37-cp37m
+      #          path: dist
+      #      - uses: actions/download-artifact@v1
+      #        with:
+      #          name: dist-linux-cp38-cp38
+      #          path: dist
 
-      - run: ls -aR dist
+      # actions/upload-release-asset isn't quite there yet...
+      # waiting for glob functionality.
+      #      - name: Upload Release Asset
+      #        uses: actions/upload-release-asset@v1.0.1
+      #        env:
+      #          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      #        with:
+      #          upload_url: ""
 
-      # TODO move to job level
-      # TODO attach assets to release
-      - if: github.event_name == 'release'
-        name: Upload to PyPI
+      - name: Upload to PyPI
         uses: pypa/gh-action-pypi-publish@master
         with:
           user: ${{ secrets.PYPI_USERNAME }}
