@@ -1,3 +1,5 @@
+"""Provides a data structure for black- and whitelisting."""
+
 from __future__ import annotations
 
 import bisect
@@ -90,6 +92,7 @@ class BlackWhiteList(Container[BWItemType]):
         return f"{type(self).__qualname__}"
 
     def __bool__(self) -> bool:
+        """Check if the bwlist contains any constraints."""
         return any((self.excluded_ids, self.excluded_auth_ids, self.excluded_auth_roles,
                     self.eligible_ids, self.eligible_auth_ids, self.eligible_auth_roles))
 
@@ -138,15 +141,40 @@ class BlackWhiteList(Container[BWItemType]):
         return contains_if_not_none(self.eligible_ids, receiver, True)
 
     def exclude_session_id(self, session_id: int) -> None:
+        """Add an id to the excluded session ids.
+
+        Args:
+            session_id: Session id to add.
+        """
         self.excluded_ids = add_optional_unique_list(self.excluded_ids, session_id)
 
     def exclude_auth_id(self, auth_id: str) -> None:
+        """Add an id to the excluded auth ids.
+
+        Args:
+            auth_id: Auth id to add.
+        """
         self.excluded_auth_ids = add_optional_unique_list(self.excluded_auth_ids, auth_id)
 
     def exclude_auth_role(self, auth_role: str) -> None:
+        """Add a role to the excluded auth roles.
+
+        Args:
+            auth_role: Auth role to add.
+        """
         self.excluded_auth_roles = add_optional_unique_list(self.excluded_auth_roles, auth_role)
 
     def unexclude(self, receiver: BWItemType) -> None:
+        """Remove a receiver from the excluded receivers.
+
+        This is the reverse operations for the "exclude_" methods.
+
+        Args:
+            receiver: Receiver to remove.
+
+        Raises:
+            ValueError: If the receiver isn't excluded.
+        """
         if isinstance(receiver, str):
             if remove_from_any(receiver,
                                self.excluded_auth_roles,
@@ -162,15 +190,40 @@ class BlackWhiteList(Container[BWItemType]):
             raise ValueError(f"session id {receiver!r} isn't excluded") from None
 
     def allow_session_id(self, session_id: int) -> None:
+        """Add an id to the eligible ids.
+
+        Args:
+            session_id: Session id to add
+        """
         self.eligible_ids = add_optional_unique_list(self.eligible_ids, session_id)
 
     def allow_auth_id(self, auth_id: str) -> None:
+        """Add an id to the eligible auth ids.
+
+        Args:
+            auth_id: Auth id to add.
+        """
         self.eligible_auth_ids = add_optional_unique_list(self.eligible_auth_ids, auth_id)
 
     def allow_auth_role(self, auth_role: str) -> None:
+        """Add a role to the eligible auth roles.
+
+        Args:
+            auth_role: Auth role to add.
+        """
         self.eligible_auth_roles = add_optional_unique_list(self.eligible_auth_roles, auth_role)
 
     def disallow(self, receiver: BWItemType) -> None:
+        """Remove a receiver from the eligible receivers.
+
+        This is the reverse operation for the "allow_" methods.
+
+        Args:
+            receiver: Receiver to remove.
+
+        Raises:
+            ValueError: If the receiver isn't eligible.
+        """
         if isinstance(receiver, str):
             if remove_from_any(receiver,
                                self.eligible_auth_roles,

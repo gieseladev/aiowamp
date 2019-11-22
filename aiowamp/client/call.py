@@ -1,3 +1,5 @@
+"""Provides classes for call handling."""
+
 from __future__ import annotations
 
 import abc
@@ -28,18 +30,34 @@ The return value is ignored.
 
 
 class CallABC(Awaitable["aiowamp.InvocationResult"], AsyncIterator["aiowamp.InvocationProgress"], abc.ABC):
+    """Represents an ongoing call of a remote procedure."""
     __slots__ = ()
 
     def __str__(self) -> str:
         return f"Call {self.request_id}"
 
     def __await__(self):
+        """Wait for the result of the call.
+
+        This is the same as `.result`.
+
+        Returns:
+            An awaitable containing the result.
+        """
         return self.result().__await__()
 
     def __aiter__(self):
         return self
 
     async def __anext__(self):
+        """Wait for the next progress result.
+
+        Returns:
+            Next progress result.
+
+        Raises:
+            StopAsyncIteration: If the call has completed.
+        """
         progress = await self.next_progress()
         if progress is None:
             raise StopAsyncIteration
@@ -49,33 +67,53 @@ class CallABC(Awaitable["aiowamp.InvocationResult"], AsyncIterator["aiowamp.Invo
     @property
     @abc.abstractmethod
     def request_id(self) -> int:
+        """Request id of the call."""
         ...
 
     @property
     @abc.abstractmethod
     def done(self) -> bool:
+        """Whether the call is complete."""
         ...
 
     @property
     @abc.abstractmethod
     def cancelled(self) -> bool:
+        """Whether the call has been cancelled."""
         ...
 
     @abc.abstractmethod
     def on_progress(self, handler: aiowamp.ProgressHandler) -> None:
+        """Add a progress handler.
+
+        Args:
+            handler: Handler to call with the progress results.
+        """
         ...
 
     @abc.abstractmethod
     async def result(self) -> aiowamp.InvocationResult:
+        """Get the result of the call."""
         ...
 
     @abc.abstractmethod
     async def next_progress(self) -> Optional[aiowamp.InvocationProgress]:
+        """Get the next progress result.
+
+        Returns:
+            The next progress result, or `None` if the call is done.
+        """
         ...
 
     @abc.abstractmethod
     async def cancel(self, cancel_mode: aiowamp.CancelMode = None, *,
                      options: aiowamp.WAMPDict = None) -> None:
+        """Cancel the call.
+
+        Args:
+            cancel_mode: Cancel mode. Defaults to `aiowamp.KILL_NO_WAIT`
+            options: Additional options to pass with the cancel message.
+        """
         ...
 
 
@@ -86,6 +124,8 @@ class Call(CallABC):
                  "__result_fut", "__progress_queue", "__progress_handler")
 
     session: aiowamp.SessionABC
+    """Session used to send messages."""
+
     _call_msg: aiowamp.msg.Call
     _call_sent: bool
 
@@ -97,6 +137,17 @@ class Call(CallABC):
 
     def __init__(self, session: aiowamp.SessionABC, call: aiowamp.msg.Call, *,
                  cancel_mode: aiowamp.CancelMode) -> None:
+        """Initialise the call.
+
+        Note that you normally shouldn't create an instance yourself, it doesn't
+        actively listen to incoming messages. It expects relevant messages to be
+        passed to `handle_response`.
+
+        Args:
+            session: Session to use to send messages.
+            call: Call message that spawned the call.
+            cancel_mode: Cancel mode used when cancelling the call.
+        """
         self.session = session
         self._call_msg = call
         self._call_sent = False
@@ -135,6 +186,11 @@ class Call(CallABC):
         self.__progress_handler = handler
 
     def kill(self, e: Exception) -> None:
+        """Kill the call.
+
+        Args:
+            e: Exception to raise when interacting with the call.
+        """
         if self.done:
             return
 
@@ -176,6 +232,11 @@ class Call(CallABC):
             self.__progress_queue.put_nowait(progress)
 
     def handle_response(self, msg: aiowamp.MessageABC) -> bool:
+        """Handle a message targeted to this call.
+
+        Args:
+            msg: Message received in relation to this call.
+        """
         if self.done:
             # already done, no need to handle message
             return True

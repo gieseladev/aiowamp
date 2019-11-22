@@ -1,3 +1,5 @@
+"""Provides invocation classes."""
+
 from __future__ import annotations
 
 import abc
@@ -23,6 +25,7 @@ ClientT = TypeVar("ClientT", bound="aiowamp.ClientABC")
 
 
 class InvocationABC(ArgsMixin, abc.ABC, Generic[ClientT]):
+    """Invocation context passed to a procedure."""
     __slots__ = ()
 
     def __str__(self) -> str:
@@ -31,16 +34,22 @@ class InvocationABC(ArgsMixin, abc.ABC, Generic[ClientT]):
     @property
     @abc.abstractmethod
     def client(self) -> ClientT:
+        """Underlying client that received the invocation."""
         ...
 
     @property
     @abc.abstractmethod
     def request_id(self) -> int:
+        """ID of the invocation."""
         ...
 
     @property
     @abc.abstractmethod
     def registered_procedure(self) -> aiowamp.URI:
+        """URI that was used to register the procedure.
+
+        See `.procedure` for the uri that was called.
+        """
         ...
 
     @property
@@ -58,16 +67,19 @@ class InvocationABC(ArgsMixin, abc.ABC, Generic[ClientT]):
     @property
     @abc.abstractmethod
     def args(self) -> Tuple[aiowamp.WAMPType, ...]:
+        """Call arguments."""
         ...
 
     @property
     @abc.abstractmethod
     def kwargs(self) -> aiowamp.WAMPDict:
+        """Call keyword arguments."""
         ...
 
     @property
     @abc.abstractmethod
     def details(self) -> aiowamp.WAMPDict:
+        """Additional call details."""
         ...
 
     @property
@@ -127,37 +139,77 @@ class InvocationABC(ArgsMixin, abc.ABC, Generic[ClientT]):
     @property
     @abc.abstractmethod
     def done(self) -> bool:
+        """Whether the invocation is done."""
         ...
 
     @property
     @abc.abstractmethod
     def interrupt(self) -> Optional[aiowamp.Interrupt]:
+        """Interrupt message sent by the caller.
+
+        `None` if the message hasn't been interrupted.
+        """
         ...
 
     @abc.abstractmethod
     async def send_progress(self, *args: aiowamp.WAMPType,
                             kwargs: aiowamp.WAMPDict = None,
                             options: aiowamp.WAMPDict = None) -> None:
+        """Send a progress result.
+
+        Use `.may_send_progress` to check whether the caller is willing to
+        receive progress results.
+
+        Args:
+            *args: Arguments for the result.
+            kwargs: Keyword arguments for the result.
+            options: Additional options to send.
+        """
         ...
 
     @abc.abstractmethod
     async def send_result(self, *args: aiowamp.WAMPType,
                           kwargs: aiowamp.WAMPDict = None,
                           options: aiowamp.WAMPDict = None) -> None:
+        """Send the final result.
+
+        This completes the invocation.
+
+        Args:
+            *args: Arguments for the result.
+            kwargs: Keyword arguments for the result.
+            options: Additional options to send.
+        """
         ...
 
     @abc.abstractmethod
     async def send_error(self, error: str, *args: aiowamp.WAMPType,
                          kwargs: aiowamp.WAMPDict = None,
                          details: aiowamp.WAMPDict = None) -> None:
+        """Send an error.
+
+        This completes the invocation.
+
+        Args:
+            error: URI of the error.
+            *args: Arguments for the result.
+            kwargs: Keyword arguments for the result.
+            details: Additional details to send.
+        """
         ...
 
     @abc.abstractmethod
     def _cancel(self) -> None:
+        """Cancel the invocation."""
         ...
 
     @abc.abstractmethod
     async def _receive_interrupt(self, interrupt: aiowamp.Interrupt) -> None:
+        """Receive an interrupt from the caller.
+
+        Args:
+            interrupt: Interrupt error that was received.
+        """
         ...
 
 

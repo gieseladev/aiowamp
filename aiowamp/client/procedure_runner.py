@@ -1,3 +1,5 @@
+"""Provides procedure runners that handle the running of procedures."""
+
 from __future__ import annotations
 
 import abc
@@ -78,19 +80,23 @@ class ProcedureRunnerABC(Awaitable[None], abc.ABC):
         return f"{type(self).__qualname__}({self.invocation})"
 
     def __await__(self):
+        """Wait for the procedure to finish"""
         return self.__task.__await__()
 
     @abc.abstractmethod
     def cancel(self) -> None:
+        """Cancel the procedure."""
         log.debug("%s: cancelling", self)
         self.invocation._cancel()
 
     @abc.abstractmethod
     async def _run(self) -> None:
+        """Run the procedure."""
         ...
 
     @abc.abstractmethod
     async def interrupt(self, exc: aiowamp.Interrupt) -> None:
+        """Interrupt the procedure."""
         log.debug("%s: received interrupt %r", self, exc)
 
         await self.invocation._receive_interrupt(exc)
@@ -148,6 +154,7 @@ class ProcedureRunnerABC(Awaitable[None], abc.ABC):
 
 
 class CoroRunner(ProcedureRunnerABC):
+    """Procedure runner for coroutines."""
     __slots__ = ("_coro", "_coro_task",
                  "_interrupt_fut", "_finish_fut")
 
@@ -238,14 +245,21 @@ class CoroRunner(ProcedureRunnerABC):
 
 
 class AsyncGenRunner(ProcedureRunnerABC):
+    """Procedure runners for async generators."""
     __slots__ = ("agen",
                  "has_pending", "pending_prog",
                  "_interrupt")
 
     agen: AsyncGenerator
+    """Async generator that is being run."""
 
     has_pending: bool
+    """Whether the runner has a pending result to send."""
     pending_prog: aiowamp.InvocationHandlerResult
+    """Pending progress that is to be send.
+    
+    This attribute doesn't exist if `.has_pending` is `False`.
+    """
 
     _interrupt: Optional[aiowamp.Interrupt]
 
@@ -325,6 +339,7 @@ class AsyncGenRunner(ProcedureRunnerABC):
 
 
 class AwaitableRunner(ProcedureRunnerABC):
+    """Procedure runner for general awaitable objects."""
     __slots__ = ("_awaitable",)
 
     _awaitable: Awaitable
@@ -355,9 +370,19 @@ class AwaitableRunner(ProcedureRunnerABC):
 
 
 RunnerFactory = Callable[["aiowamp.InvocationABC"], ProcedureRunnerABC]
+"""Callable creating a procedure runner from an invocation."""
 
 
 def get_fn_runner_cls(handler: aiowamp.InvocationHandler) -> Optional[Type[ProcedureRunnerABC]]:
+    """Get a runner class for a function.
+
+    Args:
+        handler: Function to get runner type for.
+
+    Returns:
+        Procedure runner type for the function or `None`, if no runner could be
+        determined from the function.
+    """
     if inspect.iscoroutinefunction(handler):
         return CoroRunner
 
@@ -368,6 +393,17 @@ def get_fn_runner_cls(handler: aiowamp.InvocationHandler) -> Optional[Type[Proce
 
 
 def get_obj_runner_cls(value: Any) -> Type[ProcedureRunnerABC]:
+    """Get the procedure runner class from a return value.
+
+    Args:
+        value: Return value of a handler.
+
+    Returns:
+        Procedure runner class for the value.
+
+    Raises:
+        TypeError: If the given value has no runner.
+    """
     if inspect.iscoroutine(value):
         return CoroRunner
 
@@ -382,6 +418,16 @@ def get_obj_runner_cls(value: Any) -> Type[ProcedureRunnerABC]:
 
 
 def make_lazy_factory(handler: aiowamp.InvocationHandler) -> RunnerFactory:
+    """Create a runner factory which lazily evaluates the runner.
+
+    Args:
+        handler: Handler to create runner factory for.
+
+    Returns:
+        Runner factory that creates the runner using `get_obj_runner_cls` on
+        the return value of the handler.
+    """
+
     def factory(invocation: aiowamp.InvocationABC):
         res = handler(invocation)
         cls = get_obj_runner_cls(res)
@@ -392,6 +438,11 @@ def make_lazy_factory(handler: aiowamp.InvocationHandler) -> RunnerFactory:
 
 
 def get_runner_factory(handler: aiowamp.InvocationHandler) -> RunnerFactory:
+    """Get a runner factory for a handler.
+
+    Args:
+        handler: Handler to get runner factory for.
+    """
     cls = get_fn_runner_cls(handler)
     if cls:
         return lambda i: cls(i, handler(i))

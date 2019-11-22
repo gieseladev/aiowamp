@@ -1,3 +1,5 @@
+"""Provides the built-in authentication methods."""
+
 from __future__ import annotations
 
 import abc
@@ -18,9 +20,11 @@ log = logging.getLogger(__name__)
 
 
 class AuthMethodABC(abc.ABC):
+    """Abstract auth method."""
     __slots__ = ()
 
     method_name: ClassVar[str]
+    """Name of the auth method."""
 
     def __str__(self) -> str:
         return f"{type(self).__qualname__} {self.method_name!r}"
@@ -28,23 +32,52 @@ class AuthMethodABC(abc.ABC):
     @property
     @abc.abstractmethod
     def requires_auth_id(self) -> bool:
+        """Whether the auth method requires auth_id to be set."""
         ...
 
     @property
     @abc.abstractmethod
     def auth_extra(self) -> Optional[aiowamp.WAMPDict]:
+        """Additional auth extras that need to be passed along.
+
+        `None` indicates that no extras need to be passed.
+        """
         ...
 
     @abc.abstractmethod
     async def authenticate(self, challenge: aiowamp.msg.Challenge) \
             -> Union[aiowamp.msg.Authenticate, aiowamp.msg.Abort]:
+        """Generate an authenticate message for the challenge.
+
+        Args:
+            challenge: Challenge message to respond to.
+
+        Returns:
+            Either an authenticate message to send to the router or an abort
+            message to indicate that the attempt should be aborted.
+
+        Raises:
+            Exception: When something goes wrong during authentication.
+                Should be interpreted the same as an abort message.
+        """
         ...
 
     async def check_welcome(self, welcome: aiowamp.msg.Welcome) -> None:
+        """Check the welcome message sent by the router.
+
+        Used to perform mutual authentication.
+
+        Args:
+            welcome: Welcome message sent by the router.
+
+        Raises:
+            aiowamp.AuthError:
+        """
         pass
 
 
 class AuthKeyringABC(Mapping[str, "aiowamp.AuthMethodABC"], abc.ABC):
+    """Abstract keyring for auth methods."""
     __slots__ = ()
 
     def __str__(self) -> str:
@@ -53,24 +86,47 @@ class AuthKeyringABC(Mapping[str, "aiowamp.AuthMethodABC"], abc.ABC):
 
     @abc.abstractmethod
     def __getitem__(self, method: str) -> aiowamp.AuthMethodABC:
+        """Get the auth method with the given name.
+
+        Args:
+            method: Name of the method to get.
+
+        Returns:
+            Auth method stored in the keyring.
+
+        Raises:
+            KeyError: If no auth method with the given method exists in the
+                keyring.
+        """
         ...
 
     @abc.abstractmethod
     def __len__(self) -> int:
+        """Get the amount of auth methods in the keyring."""
         ...
 
     @abc.abstractmethod
     def __iter__(self) -> Iterator[str]:
+        """Get an iterator for the auth method names in the keyring."""
         ...
 
     @property
     @abc.abstractmethod
     def auth_id(self) -> Optional[str]:
+        """Auth id to use during authentication.
+
+        Because most authentication methods require an auth id, this is handled
+        by the keyring.
+        """
         ...
 
     @property
     @abc.abstractmethod
     def auth_extra(self) -> Optional[aiowamp.WAMPDict]:
+        """Auth extras with all the auth extras from the underlying methods.
+
+        `None` if no auth extras are required.
+        """
         ...
 
 
@@ -85,6 +141,19 @@ class AuthKeyring(AuthKeyringABC):
 
     def __init__(self, *methods: "aiowamp.AuthMethodABC",
                  auth_id: str = None) -> None:
+        """Initialise the keyring.
+
+        Args:
+            *methods: Methods to initialise the keyring with.
+            auth_id: Auth id to use. Defaults to `None`.
+
+        Raises:
+            ValueError:
+                - The same auth method type was specified multiple times.
+                - No auth id was specified but one of the methods requires it.
+                - Multiple methods specify the same auth extra key with
+                    differing values.
+        """
         auth_methods = {}
         auth_extra = {}
 
@@ -142,13 +211,27 @@ class AuthKeyring(AuthKeyringABC):
 
 
 class CRAuth(AuthMethodABC):
+    """Auth method for challenge response authentication.
+
+    WAMP Challenge-Response ("WAMP-CRA") authentication is a simple, secure
+    authentication mechanism using a shared secret. The client and the server
+    share a secret. The secret never travels the wire, hence WAMP-CRA can be
+    used via non-TLS connections. The actual pre-sharing of the secret is
+    outside the scope of the authentication mechanism.
+    """
     method_name = "wampcra"
 
     __slots__ = ("secret",)
 
     secret: str
+    """Secret to use for authentication."""
 
     def __init__(self, secret: str) -> None:
+        """Initialise the auth method.
+
+        Args:
+            secret: Secret to use.
+        """
         self.secret = secret
 
     def __repr__(self) -> str:
@@ -163,6 +246,16 @@ class CRAuth(AuthMethodABC):
         return None
 
     def pbkdf2_hmac(self, salt: str, key_len: int, iterations: int) -> bytes:
+        """Derive the token using the pdkdf2 scheme.
+
+        Args:
+            salt: Salt
+            key_len: Key length
+            iterations: Amount of iterations
+
+        Returns:
+            Generated token bytes.
+        """
         return hashlib.pbkdf2_hmac("sha256", self.secret, salt, iterations, key_len)
 
     async def authenticate(self, challenge: aiowamp.msg.Challenge) -> aiowamp.msg.Authenticate:
@@ -190,6 +283,23 @@ class CRAuth(AuthMethodABC):
 
 
 class TicketAuth(AuthMethodABC):
+    """Auth method for ticket-based authentication.
+
+    With Ticket-based authentication, the client needs to present the server an
+    authentication "ticket" - some magic value to authenticate itself to the
+    server.
+
+    This "ticket" could be a long-lived, pre-agreed secret
+    (e.g. a user password) or a short-lived authentication token
+    (like a Kerberos token). WAMP does not care or interpret the ticket
+    presented by the client.
+
+        Caution: This scheme is extremely simple and flexible, but the resulting
+        security may be limited. E.g., the ticket value will be sent over the
+        wire. If the transport WAMP is running over is not encrypted, a
+        man-in-the-middle can sniff and possibly hijack the ticket. If the
+        ticket value is reused, that might enable replay attacks.
+    """
     method_name = "ticket"
 
     __slots__ = ("__ticket",)

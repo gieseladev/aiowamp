@@ -1,3 +1,5 @@
+"""Provides the client classes."""
+
 from __future__ import annotations
 
 import abc
@@ -159,6 +161,7 @@ class ClientABC(abc.ABC):
 
     @abc.abstractmethod
     async def wait_until_done(self) -> None:
+        """Wait until the client is done."""
         ...
 
     @abc.abstractmethod
@@ -179,10 +182,38 @@ class ClientABC(abc.ABC):
                        match_policy: aiowamp.MatchPolicy = None,
                        invocation_policy: aiowamp.InvocationPolicy = None,
                        options: aiowamp.WAMPDict = None) -> int:
+        """Register a procedure.
+
+        Args:
+            procedure: Procedure URI to register.
+            handler: Procedure to call.
+
+            disclose_caller: Whether callers' identities should be disclosed.
+            match_policy: Match policy for the procedure uri.
+                Can also be specified by passing an `aiowamp.URI` with a match
+                policy to the procedure.
+            invocation_policy: Invocation policy.
+            options: Additional options to pass.
+
+        Returns:
+            The registration id of the registered procedure.
+            Can be used to unregister the procedure.
+        """
         ...
 
     @abc.abstractmethod
     async def unregister(self, procedure: str, registration_id: int = None) -> None:
+        """Unregister a procedure.
+
+        Args:
+            procedure: Procedure uri to unregister.
+            registration_id: Specific registration id to unregister.
+                If not specified, ALL registrations for the procedure will be
+                unregistered.
+
+        Raises:
+            KeyError: If no registration for the procedure exists.
+        """
         ...
 
     @abc.abstractmethod
@@ -194,6 +225,24 @@ class ClientABC(abc.ABC):
              disclose_me: bool = None,
              resource_key: str = None,
              options: aiowamp.WAMPDict = None) -> aiowamp.CallABC:
+        """Call a remote procedure.
+
+        Args:
+            procedure: Procedure uri to call.
+            *args: Arguments to pass to the call.
+            kwargs: Keyword arguments to pass to the call.
+
+            receive_progress: Whether the callee may send progress results.
+            call_timeout: Timeout in seconds for the call.
+            cancel_mode: Cancel mode to use when cancelling the call.
+                See `aiowamp.Call.cancel`.
+            disclose_me: Whether to disclose the client to the callee.
+            resource_key: Resource key for sharded registrations.
+            options: Additional options to pass.
+
+        Returns:
+            The call instance to interact with the call.
+        """
         ...
 
     @abc.abstractmethod
@@ -201,6 +250,18 @@ class ClientABC(abc.ABC):
                         match_policy: aiowamp.MatchPolicy = None,
                         node_key: str = None,
                         options: aiowamp.WAMPDict = None) -> int:
+        """Subscribe to a topic.
+
+        Args:
+            topic: Topic uri to subscribe to.
+            callback: Callable to call for each event.
+
+            match_policy: Match policy for the uri.
+                Can also be specified by passing an `aiowamp.URI` with a match
+                policy.
+            node_key: Node key for sharded subscriptions.
+            options: Additional options to pass.
+        """
         ...
 
     @abc.abstractmethod
@@ -210,6 +271,7 @@ class ClientABC(abc.ABC):
         Args:
             topic: Topic URI to unsubscribe from.
             subscription_id: Specific subscription id to unsubscribe.
+                If `None`, unsubscribe all subscriptions to the topic.
 
         Raises:
             KeyError: If not subscribed to the topic.
@@ -225,6 +287,21 @@ class ClientABC(abc.ABC):
                       disclose_me: bool = None,
                       resource_key: str = None,
                       options: aiowamp.WAMPDict = None) -> None:
+        """Publish an event to a topic.
+
+        Args:
+            topic: Topic uri to publish to.
+            *args: Arguments for the event.
+            kwargs: Keyword arguments for the event.
+
+            acknowledge: Whether to wait for the router to acknowledge the event.
+            blackwhitelist: Black- and whitelisting subscribers.
+            exclude_me: Whether the client should receive this event.
+            disclose_me: Whether the client's identity should be disclosed to
+                subscribers.
+            resource_key: Resource key for sharded subscriptions.
+            options: Additional options.
+        """
         ...
 
 
@@ -250,6 +327,14 @@ class Client(ClientABC):
     __sub_handlers: Dict[int, Tuple[aiowamp.SubscriptionHandler, aiowamp.URI]]
 
     def __init__(self, session: aiowamp.SessionABC) -> None:
+        """Initialise the client.
+
+        A client is just a wrapper for a session. It takes full control over the
+        session, so when the client closes so will the session.
+
+        Args:
+            session: Session to wrap.
+        """
         self.session = session
         self.id_gen = IDGenerator()
 

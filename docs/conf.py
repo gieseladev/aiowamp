@@ -31,6 +31,7 @@ release = '0.1.1'
 # ones.
 extensions = [
     'sphinx.ext.autodoc',
+    'sphinx.ext.autosummary',
     'sphinx.ext.intersphinx',
     'sphinx.ext.napoleon',
     'sphinx.ext.viewcode',
@@ -69,6 +70,9 @@ autodoc_default_options = {
     'special-members': None,
 }
 autodoc_mock_imports = ['websockets', 'msgpack']
+
+autosummary_generate = True
+autosummary_imported_members = True
 
 intersphinx_mapping = {'python': ('https://docs.python.org/3', None)}
 

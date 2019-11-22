@@ -1,3 +1,5 @@
+"""Provides enumerations."""
+
 from typing import NewType
 
 __all__ = ["CancelMode",

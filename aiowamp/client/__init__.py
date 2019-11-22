@@ -1,3 +1,5 @@
+"""Package containing client-specific modules."""
+
 from .auth import *
 from .bwlist import *
 from .call import *

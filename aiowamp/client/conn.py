@@ -1,3 +1,5 @@
+"""Provides the logic for connecting to a router."""
+
 from __future__ import annotations
 
 import logging
@@ -18,6 +20,19 @@ log = logging.getLogger(__name__)
 
 
 def assert_welcome(msg: aiowamp.MessageABC) -> aiowamp.msg.Welcome:
+    """Assert that the given message is a welcome message.
+
+    Args:
+        msg: Message to check.
+
+    Returns:
+        The same message that was passed in.
+        This makes it possible to use it as a type guard.
+
+    Raises:
+        AbortError: If the message is an abort message.
+        UnexpectedMessageError: If the message has any other type.
+    """
     abort = message_as_type(msg, AbortMsg)
     if abort:
         raise AbortError(abort)
@@ -61,6 +76,23 @@ async def join_realm(transport: aiowamp.TransportABC, realm: str, *,
                      keyring: aiowamp.AuthKeyringABC = None,
                      roles: aiowamp.WAMPDict = None,
                      details: aiowamp.WAMPDict = None) -> aiowamp.Session:
+    """Join a realm on a router.
+
+    Args:
+        transport: Transport to run the session over.
+        realm: Realm to join.
+
+        keyring: Authentication keyring to use for authentication.
+        roles: Roles to announce with.
+        details: Additional details to send with the hello message.
+
+    Returns:
+        Session running over the transport connected to the realm.
+
+    Raises:
+        AbortError: If the joining was aborted.
+        AuthError: If the authentication failed.
+    """
     details = details or {}
     if keyring:
         log.debug("using %s", keyring)
@@ -100,6 +132,24 @@ async def connect(url: Union[str, urlparse.ParseResult], *,
                   realm: str,
                   serializer: aiowamp.SerializerABC = None,
                   keyring: aiowamp.AuthKeyringABC = None) -> aiowamp.Client:
+    """Connect to a router, join a realm, and create a client.
+
+    Args:
+        url: URL of the router to connect to.
+        realm: Realm to join.
+
+        serializer: Serializer to use for the transport.
+        keyring: Authentication keyring.
+
+    Returns:
+        Client wrapping the established session.
+
+    Raises:
+        Exception: If the connection fails.
+
+        AbortError: If the joining was aborted.
+        AuthError: If the authentication failed.
+    """
     if not isinstance(url, urlparse.ParseResult):
         url = urlparse.urlparse(url)
 

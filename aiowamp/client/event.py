@@ -1,3 +1,5 @@
+"""Provides subscription event classes."""
+
 from __future__ import annotations
 
 import abc
@@ -13,6 +15,7 @@ ClientT = TypeVar("ClientT", bound="aiowamp.ClientABC")
 
 
 class SubscriptionEventABC(ArgsMixin, abc.ABC, Generic[ClientT]):
+    """Subscription event."""
     __slots__ = ()
 
     def __str__(self) -> str:
@@ -21,16 +24,24 @@ class SubscriptionEventABC(ArgsMixin, abc.ABC, Generic[ClientT]):
     @property
     @abc.abstractmethod
     def client(self) -> ClientT:
+        """Underlying client that received the event."""
         ...
 
     @property
     @abc.abstractmethod
     def publication_id(self) -> int:
+        """ID of the publication."""
         ...
 
     @property
     @abc.abstractmethod
     def subscribed_topic(self) -> aiowamp.URI:
+        """URI of the subscription.
+
+        This is the uri that was passed to the subscribe method.
+
+        See `.topic` for the uri that the event was published to.
+        """
         ...
 
     @property
@@ -48,16 +59,19 @@ class SubscriptionEventABC(ArgsMixin, abc.ABC, Generic[ClientT]):
     @property
     @abc.abstractmethod
     def args(self) -> Tuple[aiowamp.WAMPType, ...]:
+        """Event arguments."""
         ...
 
     @property
     @abc.abstractmethod
     def kwargs(self) -> aiowamp.WAMPDict:
+        """Event keyword arguments."""
         ...
 
     @property
     @abc.abstractmethod
     def details(self) -> aiowamp.WAMPDict:
+        """Additional event details."""
         ...
 
     @property
@@ -83,6 +97,7 @@ class SubscriptionEventABC(ArgsMixin, abc.ABC, Generic[ClientT]):
 
     @abc.abstractmethod
     async def unsubscribe(self) -> None:
+        """Unsubscribe from the topic."""
         ...
 
 
